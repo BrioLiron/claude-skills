@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__PROJECT_NAME__ Tasks</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    color-scheme: dark; /* native dropdown popups render dark */
+    --bg: #0f1115; --card: #171a21; --card-hover: #1b1f28; --border: #262b36;
+    --text: #dfe3ea; --muted: #8b93a3; --accent: #6bb2ff;
+    --high: #ff6b6b; --medium: #f6b73c; --low: #6bb2ff;
+    --todo: #8b93a3; --doing: #f6b73c; --done: #4cc38a;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 860px; margin: 0 auto; padding: 24px 16px 80px;
+  }
+  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: .5px; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .meta { display: flex; align-items: center; gap: 14px; margin-left: auto; color: var(--muted); font-size: 12.5px; }
+  .meta label { display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+  #saveState { min-width: 70px; text-align: right; }
+  #saveState.ok { color: var(--done); }
+  #saveState.busy { color: var(--doing); }
+  #saveState.err { color: var(--high); }
+
+  .addbar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .addbar input {
+    flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 9px 12px; font: inherit; outline: none;
+  }
+  .addbar input:focus { border-color: var(--accent); }
+  .addbar select, .addbar button {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 9px 12px; font: inherit; cursor: pointer;
+  }
+  .addbar button:hover { border-color: var(--accent); color: var(--accent); }
+
+  ul { list-style: none; }
+  li.group-header {
+    font: 700 10.5px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px;
+    color: var(--muted); padding: 12px 4px 6px; user-select: none;
+  }
+  li.group-header.p-high   { color: var(--high); }
+  li.group-header.p-medium { color: var(--medium); }
+  li.group-header.p-low    { color: var(--low); }
+  li.task {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    margin-bottom: 8px; padding: 8px 10px;
+    position: relative;
+    display: grid; grid-template-columns: auto auto 1fr auto auto auto; gap: 8px; align-items: center;
+    transition: background .12s;
+  }
+  li.task:hover { background: var(--card-hover); }
+  li.task.dragging { opacity: .45; }
+  ul.hide-done li.task.st-done { display: none; }
+
+  .handle {
+    cursor: grab; color: var(--muted); padding: 4px 6px; border-radius: 6px;
+    font-size: 15px; user-select: none; touch-action: none;
+  }
+  .handle:hover { color: var(--text); background: var(--border); }
+  .handle:active { cursor: grabbing; }
+
+  .num {
+    position: absolute; top: -8px; left: 12px; z-index: 1;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+    color: var(--muted); font: 600 10px/1 ui-monospace, Consolas, monospace;
+    padding: 2px 7px; user-select: none; pointer-events: none;
+  }
+  li.task { margin-top: 10px; } /* room for the tag overlapping the top border */
+
+  .pill {
+    border: 1px solid var(--border); border-radius: 999px; background: transparent;
+    font: 600 11px/1 system-ui, sans-serif; padding: 5px 9px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: .4px; user-select: none;
+  }
+  .status.st-todo  { color: var(--todo);  border-color: var(--todo); }
+  .status.st-doing { color: var(--doing); border-color: var(--doing); }
+  .status.st-done  { color: var(--done);  border-color: var(--done); }
+  .prio.p-high   { color: var(--high);   border-color: var(--high); }
+  .prio.p-medium { color: var(--medium); border-color: var(--medium); }
+  .prio.p-low    { color: var(--low);    border-color: var(--low); }
+  select.pill { appearance: none; -webkit-appearance: none; background: transparent; text-align: center; }
+  select.pill option { background: var(--card); color: var(--text); font-size: 12px; }
+
+  .title {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: var(--text); font: inherit; padding: 6px 8px; width: 100%; outline: none;
+  }
+  .title:hover { border-color: var(--border); }
+  .title:focus { border-color: var(--accent); background: var(--bg); }
+  li.task.st-done .title { color: var(--muted); text-decoration: line-through; }
+
+  .icon {
+    background: transparent; border: none; color: var(--muted); cursor: pointer;
+    font-size: 14px; padding: 5px 7px; border-radius: 6px;
+  }
+  .icon:hover { color: var(--text); background: var(--border); }
+  .icon.del:hover { color: var(--high); }
+  .icon.notes-btn.has-notes { color: var(--accent); }
+
+  .notes {
+    grid-column: 1 / -1; display: none;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted); font: 12.5px/1.5 ui-monospace, Consolas, monospace;
+    padding: 8px 10px; width: 100%; resize: vertical; min-height: 54px; outline: none;
+  }
+  .notes:focus { border-color: var(--accent); color: var(--text); }
+  li.task.notes-open .notes { display: block; }
+
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  footer { color: var(--muted); font-size: 11.5px; margin-top: 24px; text-align: center; }
+  footer code { color: var(--text); background: var(--card); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>__PROJECT_NAME__ <span>Tasks</span></h1>
+  <div class="meta">
+    <span id="counts"></span>
+    <label><input type="checkbox" id="hideDone"> hide done</label>
+    <span id="saveState"></span>
+  </div>
+</header>
+
+<div class="addbar">
+  <input id="newTitle" placeholder="Add a task… (Enter)" autocomplete="off">
+  <select id="newPrio">
+    <option value="high">high</option>
+    <option value="medium" selected>medium</option>
+    <option value="low">low</option>
+  </select>
+  <button id="addBtn">Add</button>
+</div>
+
+<ul id="list"></ul>
+<div id="empty" class="empty" hidden>No tasks — add one above.</div>
+
+<footer>Sorted by priority · drag ⠿ to reorder within a group (dragging into another group changes priority) · status and priority are dropdowns · saves to <code>TASKS.json</code> automatically</footer>
+
+<script>
+const STATUS = ['todo', 'doing', 'done'];
+const PRIO = ['high', 'medium', 'low'];
+const PRIO_RANK = { high: 0, medium: 1, low: 2 };
+
+// stable: keeps the user's manual order within each priority group
+function sortTasks() {
+  tasks.sort((a, b) => PRIO_RANK[a.priority] - PRIO_RANK[b.priority]);
+}
+const $ = (s) => document.querySelector(s);
+const list = $('#list');
+
+let tasks = [];
+let nextNum = 1; // persisted counter — numbers are stable references, never reused
+const openNotes = new Set(); // UI-only: which tasks show their notes box
+
+function setSave(msg, cls) {
+  const el = $('#saveState');
+  el.textContent = msg;
+  el.className = cls;
+}
+
+let saveTimer = null;
+function save() {
+  setSave('Saving…', 'busy');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      const r = await fetch('/__save-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updated: new Date().toISOString(), nextNum, tasks }),
+      });
+      const j = await r.json();
+      if (j.ok) setSave('Saved ✓', 'ok');
+      else setSave('Save failed: ' + (j.error || r.status), 'err');
+    } catch (e) {
+      setSave('Save failed: ' + e.message, 'err');
+    }
+  }, 350);
+}
+
+async function load() {
+  try {
+    const r = await fetch('/__tasks');
+    const data = await r.json();
+    tasks = Array.isArray(data.tasks) ? data.tasks : [];
+    sortTasks();
+    // number every task that doesn't have one yet (migration + safety net);
+    // the counter never goes backwards, so numbers are never reused
+    nextNum = Math.max(
+      Number.isFinite(data.nextNum) ? data.nextNum : 1,
+      ...tasks.map((t) => (t.num || 0) + 1)
+    );
+    const unnumbered = tasks.filter((t) => !t.num);
+    for (const t of unnumbered) t.num = nextNum++;
+    render();
+    if (unnumbered.length) save();
+    else setSave('Loaded', 'ok');
+  } catch (e) {
+    setSave('Load failed: ' + e.message, 'err');
+  }
+}
+
+function newId() {
+  return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function counts() {
+  const c = { todo: 0, doing: 0, done: 0 };
+  for (const t of tasks) c[t.status] = (c[t.status] || 0) + 1;
+  $('#counts').textContent = `${c.todo} todo · ${c.doing} doing · ${c.done} done`;
+}
+
+function render() {
+  list.innerHTML = '';
+  let lastPrio = null;
+  for (const t of tasks) {
+    if (t.priority !== lastPrio) {
+      lastPrio = t.priority;
+      const h = document.createElement('li');
+      h.className = 'group-header p-' + t.priority;
+      h.textContent = t.priority;
+      list.appendChild(h);
+    }
+    const li = document.createElement('li');
+    li.className = `task st-${t.status}` + (openNotes.has(t.id) ? ' notes-open' : '');
+    li.dataset.id = t.id;
+
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = '#' + t.num;
+    num.title = 'Task number — stable reference';
+
+    const handle = document.createElement('span');
+    handle.className = 'handle';
+    handle.textContent = '⠿';
+    handle.title = 'Drag to reorder';
+    // only the handle arms dragging, so text selection in the inputs stays usable
+    handle.addEventListener('pointerdown', () => { li.draggable = true; });
+    handle.addEventListener('pointerup', () => { li.draggable = false; });
+
+    const status = document.createElement('select');
+    status.className = `pill status st-${t.status}`;
+    status.title = 'Status';
+    for (const s of STATUS) {
+      const o = document.createElement('option');
+      o.value = s;
+      o.textContent = s;
+      o.selected = s === t.status;
+      status.appendChild(o);
+    }
+    status.onchange = () => {
+      t.status = status.value;
+      render();
+      save();
+    };
+
+    const title = document.createElement('input');
+    title.className = 'title';
+    title.value = t.title;
+    title.oninput = () => { t.title = title.value; save(); };
+    title.onkeydown = (e) => { if (e.key === 'Enter') title.blur(); };
+
+    const prio = document.createElement('select');
+    prio.className = `pill prio p-${t.priority}`;
+    prio.title = 'Priority';
+    for (const p of PRIO) {
+      const o = document.createElement('option');
+      o.value = p;
+      o.textContent = p;
+      o.selected = p === t.priority;
+      prio.appendChild(o);
+    }
+    prio.onchange = () => {
+      t.priority = prio.value;
+      sortTasks();
+      render();
+      save();
+    };
+
+    const notesBtn = document.createElement('button');
+    notesBtn.className = 'icon notes-btn' + (t.notes ? ' has-notes' : '');
+    notesBtn.textContent = '📝';
+    notesBtn.title = t.notes ? 'Show/hide notes' : 'Add notes';
+    notesBtn.onclick = () => {
+      openNotes.has(t.id) ? openNotes.delete(t.id) : openNotes.add(t.id);
+      render();
+      if (openNotes.has(t.id)) li.querySelector('.notes')?.focus();
+    };
+
+    const del = document.createElement('button');
+    del.className = 'icon del';
+    del.textContent = '✕';
+    del.title = 'Delete task';
+    del.onclick = () => {
+      tasks = tasks.filter((x) => x.id !== t.id);
+      openNotes.delete(t.id);
+      render();
+      save();
+    };
+
+    const notes = document.createElement('textarea');
+    notes.className = 'notes';
+    notes.placeholder = 'Notes…';
+    notes.value = t.notes || '';
+    notes.oninput = () => { t.notes = notes.value; save(); };
+
+    li.append(handle, num, status, title, prio, notesBtn, del, notes);
+
+    // --- drag & drop reorder: move the DOM node live, commit order on dragend ---
+    li.addEventListener('dragstart', (e) => {
+      li.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', t.id);
+    });
+    li.addEventListener('dragend', () => {
+      li.classList.remove('dragging');
+      li.draggable = false;
+      // commit DOM order, then let the drop position decide the priority:
+      // landing inside another group adopts that group's priority (otherwise
+      // the live sort would just snap the row back where it came from)
+      tasks = [...list.querySelectorAll('li.task')].map((el) => tasks.find((x) => x.id === el.dataset.id));
+      const i = tasks.indexOf(t);
+      const prev = tasks[i - 1];
+      const next = tasks[i + 1];
+      if (prev && next) {
+        if (t.priority !== prev.priority && t.priority !== next.priority) t.priority = prev.priority;
+      } else if (prev && t.priority !== prev.priority) t.priority = prev.priority;
+      else if (next && t.priority !== next.priority) t.priority = next.priority;
+      sortTasks();
+      render();
+      save();
+    });
+
+    list.appendChild(li);
+  }
+
+  $('#empty').hidden = tasks.length > 0;
+  counts();
+}
+
+list.addEventListener('dragover', onDragOver);
+
+function onDragOver(e) {
+  e.preventDefault();
+  const dragged = list.querySelector('.dragging');
+  if (!dragged) return;
+  const rows = [...list.querySelectorAll('li.task')].filter((el) => el !== dragged && el.offsetParent !== null);
+  const after = rows.find((el) => e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2);
+  after ? list.insertBefore(dragged, after) : list.appendChild(dragged);
+}
+
+function addTask() {
+  const input = $('#newTitle');
+  const title = input.value.trim();
+  if (!title) return;
+  tasks.unshift({ id: newId(), num: nextNum++, title, status: 'todo', priority: $('#newPrio').value, notes: '' });
+  sortTasks(); // stable → the new task lands at the top of its priority group
+  input.value = '';
+  render();
+  save();
+  input.focus();
+}
+
+$('#addBtn').onclick = addTask;
+$('#newTitle').onkeydown = (e) => { if (e.key === 'Enter') addTask(); };
+$('#hideDone').onchange = (e) => list.classList.toggle('hide-done', e.target.checked);
+
+load();
+</script>
+</body>
+</html>
