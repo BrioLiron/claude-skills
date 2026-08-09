@@ -52,7 +52,7 @@
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
     margin-bottom: 8px; padding: 8px 10px;
     position: relative;
-    display: grid; grid-template-columns: auto auto 1fr auto auto auto; gap: 8px; align-items: center;
+    display: grid; grid-template-columns: auto auto auto 1fr auto auto auto auto; gap: 8px; align-items: center;
     transition: background .12s;
   }
   li.task:hover { background: var(--card-hover); }
@@ -73,6 +73,7 @@
     padding: 2px 7px; user-select: none; pointer-events: none;
   }
   li.task { margin-top: 10px; } /* room for the tag overlapping the top border */
+  li.task.subtask { margin-top: 6px; } /* indent is inline: depth × 34px */
 
   .pill {
     border: 1px solid var(--border); border-radius: 999px; background: transparent;
@@ -102,6 +103,8 @@
   }
   .icon:hover { color: var(--text); background: var(--border); }
   .icon.del:hover { color: var(--high); }
+  .icon.sub:hover { color: var(--accent); }
+  .icon.tog { padding: 5px 4px; font-size: 11px; }
   .icon.notes-btn.has-notes { color: var(--accent); }
 
   .notes {
@@ -141,7 +144,7 @@
 <ul id="list"></ul>
 <div id="empty" class="empty" hidden>No tasks — add one above.</div>
 
-<footer>Sorted by priority · drag ⠿ to reorder within a group (dragging into another group changes priority) · status and priority are dropdowns · saves to <code>TASKS.json</code> automatically</footer>
+<footer>Sorted by priority · drag ⠿ to reorder within a group (dragging into another group changes priority) · ⤷ adds a subtask at any depth (#1-2, #1-2-1… — drag reorders within the same parent) · ▾ collapses/expands a task's subtree ·status and priority are dropdowns · saves to <code>TASKS.json</code> automatically</footer>
 
 <script>
 const STATUS = ['todo', 'doing', 'done'];
@@ -158,6 +161,9 @@ const list = $('#list');
 let tasks = [];
 let nextNum = 1; // persisted counter — numbers are stable references, never reused
 const openNotes = new Set(); // UI-only: which tasks show their notes box
+// per-browser UI state: which tasks have their subtasks collapsed
+const collapsed = new Set(JSON.parse(localStorage.getItem('tasks-collapsed') || '[]'));
+const saveCollapsed = () => localStorage.setItem('tasks-collapsed', JSON.stringify([...collapsed]));
 
 function setSave(msg, cls) {
   const el = $('#saveState');
@@ -199,8 +205,27 @@ async function load() {
     );
     const unnumbered = tasks.filter((t) => !t.num);
     for (const t of unnumbered) t.num = nextNum++;
+    // same safety net for subtasks, recursively: per-parent counter, numbers never reused
+    let subFixed = 0;
+    const fixSubNums = (t) => {
+      if (!Array.isArray(t.subtasks)) return;
+      t.nextSub = Math.max(
+        Number.isFinite(t.nextSub) ? t.nextSub : 1,
+        ...t.subtasks.map((s) => (s.num || 0) + 1)
+      );
+      for (const s of t.subtasks) {
+        if (!s.num) { s.num = t.nextSub++; subFixed++; }
+        fixSubNums(s);
+      }
+    };
+    for (const t of tasks) fixSubNums(t);
+    // drop collapsed-state ids that no longer exist
+    let prunedCollapsed = false;
+    const liveIds = new Set(allTasks(tasks).map((x) => x.id));
+    for (const id of collapsed) if (!liveIds.has(id)) { collapsed.delete(id); prunedCollapsed = true; }
+    if (prunedCollapsed) saveCollapsed();
     render();
-    if (unnumbered.length) save();
+    if (unnumbered.length || subFixed) save();
     else setSave('Loaded', 'ok');
   } catch (e) {
     setSave('Load failed: ' + e.message, 'err');
@@ -211,10 +236,192 @@ function newId() {
   return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+function allTasks(ts) {
+  return ts.flatMap((t) => [t, ...allTasks(t.subtasks || [])]);
+}
+
 function counts() {
   const c = { todo: 0, doing: 0, done: 0 };
-  for (const t of tasks) c[t.status] = (c[t.status] || 0) + 1;
+  for (const t of allTasks(tasks)) c[t.status] = (c[t.status] || 0) + 1;
   $('#counts').textContent = `${c.todo} todo · ${c.doing} doing · ${c.done} done`;
+}
+
+function addSubtask(parent) {
+  parent.subtasks = parent.subtasks || [];
+  // per-parent counter — sub numbers are stable and never reused, like top-level nums
+  parent.nextSub = Math.max(
+    Number.isFinite(parent.nextSub) ? parent.nextSub : 1,
+    ...parent.subtasks.map((s) => (s.num || 0) + 1)
+  );
+  const s = { id: newId(), num: parent.nextSub++, title: '', status: 'todo', priority: parent.priority, notes: '' };
+  parent.subtasks.push(s);
+  if (collapsed.delete(parent.id)) saveCollapsed(); // reveal what we just added
+  render();
+  save();
+  list.querySelector(`li[data-id="${s.id}"] .title`)?.focus();
+}
+
+// one row for a task at any depth — subtasks render indented under their
+// parent, keep manual order, and their priority pill is a label only
+// (top-level priority grouping ignores it). label is the full "#1-2-1" path.
+function buildRow(t, parent, label, depth) {
+  const li = document.createElement('li');
+  li.className = `task st-${t.status}` + (parent ? ' subtask' : '') + (openNotes.has(t.id) ? ' notes-open' : '');
+  li.dataset.id = t.id;
+  li.dataset.parent = parent ? parent.id : '';
+  li.dataset.depth = depth;
+  if (depth) li.style.marginLeft = depth * 34 + 'px';
+
+  const num = document.createElement('span');
+  num.className = 'num';
+  num.textContent = label;
+  num.title = 'Task number — stable reference';
+
+  const kids = (t.subtasks || []).length;
+  const tog = document.createElement('button');
+  tog.className = 'icon tog';
+  tog.textContent = collapsed.has(t.id) ? '▸' : '▾';
+  if (kids) {
+    tog.title = collapsed.has(t.id) ? `Expand ${kids} subtask${kids > 1 ? 's' : ''}` : 'Collapse subtasks';
+    tog.onclick = () => {
+      collapsed.has(t.id) ? collapsed.delete(t.id) : collapsed.add(t.id);
+      saveCollapsed();
+      render();
+    };
+  } else {
+    tog.style.visibility = 'hidden'; // keeps the grid aligned on leaf rows
+  }
+
+  const handle = document.createElement('span');
+  handle.className = 'handle';
+  handle.textContent = '⠿';
+  handle.title = 'Drag to reorder';
+  // only the handle arms dragging, so text selection in the inputs stays usable
+  handle.addEventListener('pointerdown', () => { li.draggable = true; });
+  handle.addEventListener('pointerup', () => { li.draggable = false; });
+
+  const status = document.createElement('select');
+  status.className = `pill status st-${t.status}`;
+  status.title = 'Status';
+  for (const s of STATUS) {
+    const o = document.createElement('option');
+    o.value = s;
+    o.textContent = s;
+    o.selected = s === t.status;
+    status.appendChild(o);
+  }
+  status.onchange = () => {
+    t.status = status.value;
+    render();
+    save();
+  };
+
+  const title = document.createElement('input');
+  title.className = 'title';
+  title.value = t.title;
+  title.oninput = () => { t.title = title.value; save(); };
+  title.onkeydown = (e) => { if (e.key === 'Enter') title.blur(); };
+
+  const prio = document.createElement('select');
+  prio.className = `pill prio p-${t.priority}`;
+  prio.title = 'Priority';
+  for (const p of PRIO) {
+    const o = document.createElement('option');
+    o.value = p;
+    o.textContent = p;
+    o.selected = p === t.priority;
+    prio.appendChild(o);
+  }
+  prio.onchange = () => {
+    t.priority = prio.value;
+    if (!parent) sortTasks();
+    render();
+    save();
+  };
+
+  const subBtn = document.createElement('button');
+  subBtn.className = 'icon sub';
+  subBtn.textContent = '⤷';
+  subBtn.title = 'Add subtask';
+  subBtn.onclick = () => addSubtask(t);
+
+  const notesBtn = document.createElement('button');
+  notesBtn.className = 'icon notes-btn' + (t.notes ? ' has-notes' : '');
+  notesBtn.textContent = '📝';
+  notesBtn.title = t.notes ? 'Show/hide notes' : 'Add notes';
+  notesBtn.onclick = () => {
+    openNotes.has(t.id) ? openNotes.delete(t.id) : openNotes.add(t.id);
+    render();
+    if (openNotes.has(t.id)) list.querySelector(`li[data-id="${t.id}"] .notes`)?.focus();
+  };
+
+  const del = document.createElement('button');
+  del.className = 'icon del';
+  del.textContent = '✕';
+  del.title = parent ? 'Delete subtask' : 'Delete task';
+  del.onclick = () => {
+    if (parent) parent.subtasks = parent.subtasks.filter((x) => x.id !== t.id);
+    else tasks = tasks.filter((x) => x.id !== t.id);
+    openNotes.delete(t.id);
+    render();
+    save();
+  };
+
+  const notes = document.createElement('textarea');
+  notes.className = 'notes';
+  notes.placeholder = 'Notes…';
+  notes.value = t.notes || '';
+  notes.oninput = () => { t.notes = notes.value; save(); };
+
+  li.append(tog, handle, num, status, title, prio, subBtn, notesBtn, del, notes);
+
+  // --- drag & drop reorder: move the DOM node live, commit order on dragend ---
+  li.addEventListener('dragstart', (e) => {
+    li.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', t.id);
+    // a dragged task's whole subtree re-attaches on dragend's re-render; hide it mid-drag
+    const hideDesc = (x) => {
+      for (const s of x.subtasks || []) {
+        const el = list.querySelector(`li[data-id="${s.id}"]`);
+        if (el) el.style.display = 'none';
+        hideDesc(s);
+      }
+    };
+    hideDesc(t);
+  });
+  li.addEventListener('dragend', () => {
+    li.classList.remove('dragging');
+    li.draggable = false;
+    if (parent) {
+      // subtasks: commit sibling order only — they never leave their parent
+      const ids = [...list.querySelectorAll(`li.task[data-parent="${parent.id}"]`)].map((el) => el.dataset.id);
+      parent.subtasks = ids.map((id) => parent.subtasks.find((x) => x.id === id));
+    } else {
+      // commit DOM order (top-level rows only), then let the drop position
+      // decide the priority: landing inside another group adopts that group's
+      // priority (otherwise the live sort would just snap the row back)
+      tasks = [...list.querySelectorAll('li.task[data-parent=""]')].map((el) => tasks.find((x) => x.id === el.dataset.id));
+      const i = tasks.indexOf(t);
+      const prev = tasks[i - 1];
+      const next = tasks[i + 1];
+      if (prev && next) {
+        if (t.priority !== prev.priority && t.priority !== next.priority) t.priority = prev.priority;
+      } else if (prev && t.priority !== prev.priority) t.priority = prev.priority;
+      else if (next && t.priority !== next.priority) t.priority = next.priority;
+      sortTasks();
+    }
+    render();
+    save();
+  });
+
+  return li;
+}
+
+function appendRows(t, parent, label, depth) {
+  list.appendChild(buildRow(t, parent, label, depth));
+  if (collapsed.has(t.id)) return; // children stay in the data, just not rendered
+  for (const s of t.subtasks || []) appendRows(s, t, `${label}-${s.num}`, depth + 1);
 }
 
 function render() {
@@ -228,117 +435,7 @@ function render() {
       h.textContent = t.priority;
       list.appendChild(h);
     }
-    const li = document.createElement('li');
-    li.className = `task st-${t.status}` + (openNotes.has(t.id) ? ' notes-open' : '');
-    li.dataset.id = t.id;
-
-    const num = document.createElement('span');
-    num.className = 'num';
-    num.textContent = '#' + t.num;
-    num.title = 'Task number — stable reference';
-
-    const handle = document.createElement('span');
-    handle.className = 'handle';
-    handle.textContent = '⠿';
-    handle.title = 'Drag to reorder';
-    // only the handle arms dragging, so text selection in the inputs stays usable
-    handle.addEventListener('pointerdown', () => { li.draggable = true; });
-    handle.addEventListener('pointerup', () => { li.draggable = false; });
-
-    const status = document.createElement('select');
-    status.className = `pill status st-${t.status}`;
-    status.title = 'Status';
-    for (const s of STATUS) {
-      const o = document.createElement('option');
-      o.value = s;
-      o.textContent = s;
-      o.selected = s === t.status;
-      status.appendChild(o);
-    }
-    status.onchange = () => {
-      t.status = status.value;
-      render();
-      save();
-    };
-
-    const title = document.createElement('input');
-    title.className = 'title';
-    title.value = t.title;
-    title.oninput = () => { t.title = title.value; save(); };
-    title.onkeydown = (e) => { if (e.key === 'Enter') title.blur(); };
-
-    const prio = document.createElement('select');
-    prio.className = `pill prio p-${t.priority}`;
-    prio.title = 'Priority';
-    for (const p of PRIO) {
-      const o = document.createElement('option');
-      o.value = p;
-      o.textContent = p;
-      o.selected = p === t.priority;
-      prio.appendChild(o);
-    }
-    prio.onchange = () => {
-      t.priority = prio.value;
-      sortTasks();
-      render();
-      save();
-    };
-
-    const notesBtn = document.createElement('button');
-    notesBtn.className = 'icon notes-btn' + (t.notes ? ' has-notes' : '');
-    notesBtn.textContent = '📝';
-    notesBtn.title = t.notes ? 'Show/hide notes' : 'Add notes';
-    notesBtn.onclick = () => {
-      openNotes.has(t.id) ? openNotes.delete(t.id) : openNotes.add(t.id);
-      render();
-      if (openNotes.has(t.id)) li.querySelector('.notes')?.focus();
-    };
-
-    const del = document.createElement('button');
-    del.className = 'icon del';
-    del.textContent = '✕';
-    del.title = 'Delete task';
-    del.onclick = () => {
-      tasks = tasks.filter((x) => x.id !== t.id);
-      openNotes.delete(t.id);
-      render();
-      save();
-    };
-
-    const notes = document.createElement('textarea');
-    notes.className = 'notes';
-    notes.placeholder = 'Notes…';
-    notes.value = t.notes || '';
-    notes.oninput = () => { t.notes = notes.value; save(); };
-
-    li.append(handle, num, status, title, prio, notesBtn, del, notes);
-
-    // --- drag & drop reorder: move the DOM node live, commit order on dragend ---
-    li.addEventListener('dragstart', (e) => {
-      li.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', t.id);
-    });
-    li.addEventListener('dragend', () => {
-      li.classList.remove('dragging');
-      li.draggable = false;
-      // commit DOM order, then let the drop position decide the priority:
-      // landing inside another group adopts that group's priority (otherwise
-      // the live sort would just snap the row back where it came from)
-      tasks = [...list.querySelectorAll('li.task')].map((el) => tasks.find((x) => x.id === el.dataset.id));
-      const i = tasks.indexOf(t);
-      const prev = tasks[i - 1];
-      const next = tasks[i + 1];
-      if (prev && next) {
-        if (t.priority !== prev.priority && t.priority !== next.priority) t.priority = prev.priority;
-      } else if (prev && t.priority !== prev.priority) t.priority = prev.priority;
-      else if (next && t.priority !== next.priority) t.priority = next.priority;
-      sortTasks();
-      render();
-      save();
-    });
-
-    list.appendChild(li);
+    appendRows(t, null, '#' + t.num, 0);
   }
 
   $('#empty').hidden = tasks.length > 0;
@@ -351,9 +448,18 @@ function onDragOver(e) {
   e.preventDefault();
   const dragged = list.querySelector('.dragging');
   if (!dragged) return;
-  const rows = [...list.querySelectorAll('li.task')].filter((el) => el !== dragged && el.offsetParent !== null);
+  // rows only reorder among their own siblings (same parent, any depth) and
+  // only land between blocks (a block = a row + its whole subtree)
+  const rows = [...list.querySelectorAll(`li.task[data-parent="${dragged.dataset.parent}"]`)]
+    .filter((el) => el !== dragged && el.offsetParent !== null);
+  if (!rows.length) return;
   const after = rows.find((el) => e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2);
-  after ? list.insertBefore(dragged, after) : list.appendChild(dragged);
+  if (after) { list.insertBefore(dragged, after); return; }
+  // below the last sibling: land after that sibling's whole subtree
+  const last = rows[rows.length - 1];
+  let end = last.nextElementSibling;
+  while (end && end.classList.contains('task') && Number(end.dataset.depth) > Number(last.dataset.depth)) end = end.nextElementSibling;
+  list.insertBefore(dragged, end); // insertBefore(x, null) appends
 }
 
 function addTask() {

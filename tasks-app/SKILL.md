@@ -35,10 +35,12 @@ All files to install live in this skill's `assets/` directory (next to this SKIL
 ## Task format (what Claude needs to know to work with TASKS.json)
 
 ```json
-{ "id": "tXXXX", "num": 12, "title": "…", "status": "todo|doing|done", "priority": "high|medium|low", "notes": "…" }
+{ "id": "tXXXX", "num": 12, "title": "…", "status": "todo|doing|done", "priority": "high|medium|low", "notes": "…",
+  "nextSub": 3, "subtasks": [ { "id": "tYYYY", "num": 1, "title": "…", "status": "…", "priority": "…", "notes": "…" } ] }
 ```
 
 - `num` is the stable reference — when the owner says "task 12", match on `num`. Never renumber or reuse numbers; new tasks take `nextNum` and increment it.
+- Subtasks nest recursively to any depth (`subtasks` inside `subtasks`), each level numbered per-parent via its own `nextSub` — "task 12-1-3" is the path of `num`s from the top. Same never-reuse rule at every level. A subtask's `priority` is a label only; subtasks always render under their parent, and deleting a task deletes its whole subtree.
 - Claude may edit TASKS.json directly (it's pretty-printed JSON), but the recommended convention: **Claude records outcomes in `notes` ("Implemented …, needs testing") and lets the owner flip `status` to done after verifying.** Offer this convention to the user; don't impose it.
 
 Suggested CLAUDE.md snippet (adjust paths/URL to what was actually installed):
