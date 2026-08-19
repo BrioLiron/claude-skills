@@ -5,7 +5,7 @@ description: Install the tasks dashboard (TASKS.json + /tasks web UI, originally
 
 # Tasks app installer
 
-A tiny per-project task tracker: a single JSON file (`TASKS.json` in the repo root) as the source of truth, edited through a dark-themed web dashboard at `/tasks`. Tasks have stable `#N` numbers (never reused) so the owner and Claude can reference "task 12" unambiguously across sessions. The dashboard supports add / drag-reorder / priority groups (high/medium/low) / status pills (todo/doing/done) / per-task notes, and autosaves.
+A tiny per-project task tracker: a single JSON file (`TASKS.json` in the repo root) as the source of truth, edited through a dark-themed web dashboard at `/tasks`. Tasks have stable `#N` numbers (never reused) so the owner and Claude can reference "task 12" unambiguously across sessions. The dashboard supports add / drag-reorder / priority groups (high/medium/low) / status pills (todo/doing/done) / per-task notes / recursive subtasks with collapse-expand / a persisted "hide done" toggle / **search by title or #number** (a search box under the add bar: text matches titles case-insensitively, `12`, `#12` or `12-1` match exactly that task with its subtasks — never `#120`; a match shows with its parents and subtasks as dimmed context, done tasks included; `/` focuses the box from anywhere, Esc clears), and autosaves.
 
 All files to install live in this skill's `assets/` directory (next to this SKILL.md):
 

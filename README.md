@@ -10,8 +10,11 @@ This repo IS the `~/.claude/skills` folder — each subfolder is one skill, invo
   releases, owner-approval rules, release notes/Slack files, Windows/PowerShell gotchas);
   also the template conventions for other Brio projects.
 - **tasks-app** — installs the tasks dashboard (`TASKS.json` + `/tasks` web UI, originally
-  built for BARD) into the current project. Carries the dashboard HTML, a Vite dev-server
-  plugin, and a zero-dependency standalone Node server.
+  built for BARD) into the current project. Carries the dashboard HTML (priority groups,
+  drag-reorder, recursive subtasks, notes, hide-done, search by title or #number), a Vite
+  dev-server plugin, and a zero-dependency standalone Node server.
+- **open-tasks** — opens a project's tasks dashboard in a new browser-pane tab with minimal
+  token spend ("run tasks" / "open tasks").
 - **warm-up** / **wrap-up** — session start/finish routines.
 
 ## Setup on a new machine

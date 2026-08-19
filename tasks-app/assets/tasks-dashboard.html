@@ -40,6 +40,21 @@
   }
   .addbar button:hover { border-color: var(--accent); color: var(--accent); }
 
+  /* search: filters the list live by title text or #number path (see filterState) */
+  .searchbar { display: flex; align-items: center; gap: 8px; margin: -6px 0 14px; }
+  .searchbar input {
+    flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 8px 12px; font: inherit; outline: none;
+  }
+  .searchbar input:focus { border-color: var(--accent); }
+  .searchbar .hits { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .searchbar .hits.none { color: var(--high); }
+  .searchbar button {
+    background: transparent; border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted); padding: 7px 10px; font: inherit; cursor: pointer;
+  }
+  .searchbar button:hover { border-color: var(--accent); color: var(--accent); }
+
   ul { list-style: none; }
   li.group-header {
     font: 700 10.5px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px;
@@ -57,7 +72,11 @@
   }
   li.task:hover { background: var(--card-hover); }
   li.task.dragging { opacity: .45; }
-  ul.hide-done li.task.st-done { display: none; }
+  /* "hide done" — suspended while a search is active: if you look for a task
+     by number or title you want to find it, done or not */
+  ul.hide-done:not(.searching) li.task.st-done { display: none; }
+  /* rows shown only as context for a match (its parents / subtasks) */
+  ul.searching li.task.ctx { opacity: .5; }
 
   .handle {
     cursor: grab; color: var(--muted); padding: 4px 6px; border-radius: 6px;
@@ -141,10 +160,16 @@
   <button id="addBtn">Add</button>
 </div>
 
+<div class="searchbar">
+  <input id="search" placeholder="Search by title or #number… ( / focuses · Esc clears )" autocomplete="off" spellcheck="false">
+  <span id="hits" class="hits"></span>
+  <button id="clearSearch" title="Clear search" hidden>✕ clear</button>
+</div>
+
 <ul id="list"></ul>
 <div id="empty" class="empty" hidden>No tasks — add one above.</div>
 
-<footer>Sorted by priority · drag ⠿ to reorder within a group (dragging into another group changes priority) · ⤷ adds a subtask at any depth (#1-2, #1-2-1… — drag reorders within the same parent) · ▾ collapses/expands a task's subtree ·status and priority are dropdowns · saves to <code>TASKS.json</code> automatically</footer>
+<footer>Sorted by priority · drag ⠿ to reorder within a group (dragging into another group changes priority) · ⤷ adds a subtask at any depth (#1-2, #1-2-1… — drag reorders within the same parent) · ▾ collapses/expands a task's subtree · status and priority are dropdowns · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically</footer>
 
 <script>
 const STATUS = ['todo', 'doing', 'done'];
@@ -246,6 +271,39 @@ function counts() {
   $('#counts').textContent = `${c.todo} todo · ${c.doing} doing · ${c.done} done`;
 }
 
+// --- search: title text or #number path ------------------------------------
+// The query is matched against each row's title (case-insensitive substring)
+// and its full number label: "12", "#12" or "12-1" match exactly that task —
+// #12 and everything under it, #12-1 and its subtree — never #120. A match
+// shows the row itself plus its parents (so you see where it lives) and its
+// subtasks (the whole task); those context rows are dimmed. Collapsed state
+// and "hide done" are ignored while a search is active — a search means "find
+// it" — and restored untouched when the box is cleared.
+let query = '';
+function filterState() {
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+  const numPath = q.replace(/^#/, '');
+  const byNum = /^\d+(-\d+)*$/.test(numPath);
+  const hit = new Set(), show = new Set();
+  const showSubtree = (t) => { show.add(t.id); for (const s of t.subtasks || []) showSubtree(s); };
+  const walk = (ts, label0, chain) => {
+    for (const t of ts) {
+      const label = label0 ? `${label0}-${t.num}` : '#' + t.num;
+      const isHit = (byNum && (label === '#' + numPath || label.startsWith('#' + numPath + '-')))
+        || (t.title || '').toLowerCase().includes(q);
+      if (isHit) {
+        hit.add(t.id);
+        for (const id of chain) show.add(id); // parents, for context
+        showSubtree(t);                        // the task and its subtasks
+      }
+      walk(t.subtasks || [], label, [...chain, t.id]);
+    }
+  };
+  walk(tasks, '', []);
+  return { q, hit, show };
+}
+
 function addSubtask(parent) {
   parent.subtasks = parent.subtasks || [];
   // per-parent counter — sub numbers are stable and never reused, like top-level nums
@@ -264,9 +322,10 @@ function addSubtask(parent) {
 // one row for a task at any depth — subtasks render indented under their
 // parent, keep manual order, and their priority pill is a label only
 // (top-level priority grouping ignores it). label is the full "#1-2-1" path.
-function buildRow(t, parent, label, depth) {
+function buildRow(t, parent, label, depth, f) {
   const li = document.createElement('li');
-  li.className = `task st-${t.status}` + (parent ? ' subtask' : '') + (openNotes.has(t.id) ? ' notes-open' : '');
+  li.className = `task st-${t.status}` + (parent ? ' subtask' : '') + (openNotes.has(t.id) ? ' notes-open' : '')
+    + (f && !f.hit.has(t.id) ? ' ctx' : '');
   li.dataset.id = t.id;
   li.dataset.parent = parent ? parent.id : '';
   li.dataset.depth = depth;
@@ -280,8 +339,12 @@ function buildRow(t, parent, label, depth) {
   const kids = (t.subtasks || []).length;
   const tog = document.createElement('button');
   tog.className = 'icon tog';
-  tog.textContent = collapsed.has(t.id) ? '▸' : '▾';
-  if (kids) {
+  tog.textContent = collapsed.has(t.id) && !f ? '▸' : '▾';
+  if (kids && f) {
+    // searching: the subtree is forced open so matches show — the toggle is inert
+    tog.title = 'Subtasks stay open while searching';
+    tog.disabled = true;
+  } else if (kids) {
     tog.title = collapsed.has(t.id) ? `Expand ${kids} subtask${kids > 1 ? 's' : ''}` : 'Collapse subtasks';
     tog.onclick = () => {
       collapsed.has(t.id) ? collapsed.delete(t.id) : collapsed.add(t.id);
@@ -418,16 +481,21 @@ function buildRow(t, parent, label, depth) {
   return li;
 }
 
-function appendRows(t, parent, label, depth) {
-  list.appendChild(buildRow(t, parent, label, depth));
-  if (collapsed.has(t.id)) return; // children stay in the data, just not rendered
-  for (const s of t.subtasks || []) appendRows(s, t, `${label}-${s.num}`, depth + 1);
+function appendRows(t, parent, label, depth, f) {
+  if (f && !f.show.has(t.id)) return; // filtered out (its whole subtree with it — a matching descendant would have marked it)
+  list.appendChild(buildRow(t, parent, label, depth, f));
+  if (collapsed.has(t.id) && !f) return; // children stay in the data, just not rendered (search forces them open)
+  for (const s of t.subtasks || []) appendRows(s, t, `${label}-${s.num}`, depth + 1, f);
 }
 
 function render() {
+  const f = filterState();
+  list.classList.toggle('searching', !!f);
   list.innerHTML = '';
   let lastPrio = null;
+  let shown = 0;
   for (const t of tasks) {
+    if (f && !f.show.has(t.id)) continue;
     if (t.priority !== lastPrio) {
       lastPrio = t.priority;
       const h = document.createElement('li');
@@ -435,10 +503,17 @@ function render() {
       h.textContent = t.priority;
       list.appendChild(h);
     }
-    appendRows(t, null, '#' + t.num, 0);
+    appendRows(t, null, '#' + t.num, 0, f);
+    shown++;
   }
 
-  $('#empty').hidden = tasks.length > 0;
+  const empty = $('#empty');
+  empty.textContent = f ? `No tasks match “${f.q}”.` : 'No tasks — add one above.';
+  empty.hidden = f ? shown > 0 : tasks.length > 0;
+  const hits = $('#hits');
+  hits.textContent = f ? `${f.hit.size} match${f.hit.size === 1 ? '' : 'es'}` : '';
+  hits.classList.toggle('none', !!f && f.hit.size === 0);
+  $('#clearSearch').hidden = !f;
   counts();
 }
 
@@ -476,7 +551,29 @@ function addTask() {
 
 $('#addBtn').onclick = addTask;
 $('#newTitle').onkeydown = (e) => { if (e.key === 'Enter') addTask(); };
-$('#hideDone').onchange = (e) => list.classList.toggle('hide-done', e.target.checked);
+
+// search box: live filter; Esc clears; "/" anywhere outside a field focuses it
+const searchBox = $('#search');
+const setQuery = (v) => { query = v; if (searchBox.value !== v) searchBox.value = v; render(); };
+searchBox.oninput = () => setQuery(searchBox.value);
+searchBox.onkeydown = (e) => { if (e.key === 'Escape') { setQuery(''); searchBox.blur(); } };
+$('#clearSearch').onclick = () => { setQuery(''); searchBox.focus(); };
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = (document.activeElement || {}).tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  e.preventDefault();
+  searchBox.focus();
+  searchBox.select();
+});
+// hide done by default; the choice persists (unticking is remembered)
+const hideDoneBox = $('#hideDone');
+hideDoneBox.checked = localStorage.getItem('tasks-hide-done') !== '0';
+list.classList.toggle('hide-done', hideDoneBox.checked);
+hideDoneBox.onchange = (e) => {
+  list.classList.toggle('hide-done', e.target.checked);
+  localStorage.setItem('tasks-hide-done', e.target.checked ? '1' : '0');
+};
 
 load();
 </script>
