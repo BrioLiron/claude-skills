@@ -12,6 +12,7 @@
     --text: #dfe3ea; --muted: #8b93a3; --accent: #6bb2ff;
     --high: #ff6b6b; --medium: #f6b73c; --low: #6bb2ff;
     --todo: #8b93a3; --doing: #f6b73c; --done: #4cc38a;
+    --cat: #191f2b; --cat-border: #31405e;
   }
   body {
     background: var(--bg); color: var(--text);
@@ -78,6 +79,9 @@
   /* rows shown only as context for a match (its parents / subtasks) */
   ul.searching li.task.ctx { opacity: .5; }
 
+  /* live drag feedback: the row the dragged task would nest under lights up */
+  li.task.drop-into { border-color: var(--accent); }
+
   .handle {
     cursor: grab; color: var(--muted); padding: 4px 6px; border-radius: 6px;
     font-size: 15px; user-select: none; touch-action: none;
@@ -93,6 +97,19 @@
   }
   li.task { margin-top: 10px; } /* room for the tag overlapping the top border */
   li.task.subtask { margin-top: 6px; } /* indent is inline: depth × 34px */
+
+  /* category rows — organizational shelves: no number, no status, no priority;
+     they sit as their own band above the priority groups, and the tasks filed
+     under one keep their own global #numbers */
+  li.task.category {
+    background: var(--cat); border-color: var(--cat-border);
+    grid-template-columns: auto auto auto 1fr auto auto auto auto;
+    padding: 2px 10px; margin-top: 4px; /* thinner than task rows — shelves are chrome, not content */
+  }
+  li.task.category .title { font-weight: 700; font-size: 14px; padding: 3px 8px; }
+  li.task.category .icon, li.task.category .handle { padding: 2px 5px; }
+  .cat-icon { color: var(--accent); font-size: 13px; padding: 4px 2px; user-select: none; }
+  .cat-counts { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
 
   .pill {
     border: 1px solid var(--border); border-radius: 999px; background: transparent;
@@ -158,6 +175,7 @@
     <option value="low">low</option>
   </select>
   <button id="addBtn">Add</button>
+  <button id="addCatBtn" title="Add a category — an organizing shelf with no number, no status and no priority; drag tasks onto it to file them">＋ Category</button>
 </div>
 
 <div class="searchbar">
@@ -169,16 +187,35 @@
 <ul id="list"></ul>
 <div id="empty" class="empty" hidden>No tasks — add one above.</div>
 
-<footer>Sorted by priority · drag ⠿ to reorder within a group (dragging into another group changes priority) · ⤷ adds a subtask at any depth (#1-2, #1-2-1… — drag reorders within the same parent) · ▾ collapses/expands a task's subtree · status and priority are dropdowns · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically</footer>
+<footer>Sorted by priority · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically</footer>
 
 <script>
 const STATUS = ['todo', 'doing', 'done'];
 const PRIO = ['high', 'medium', 'low'];
 const PRIO_RANK = { high: 0, medium: 1, low: 2 };
 
-// stable: keeps the user's manual order within each priority group
+// categories (kind: 'category') are organizational shelves: no number, no
+// status, top-level only. The tasks filed under one are REAL tasks — they keep
+// their own global #numbers, so filing/unfiling never renumbers anything.
+const isCat = (t) => t.kind === 'category';
+// every row that carries a global #number: top-level tasks + category members
+function numberedRoots() {
+  return tasks.flatMap((t) => (isCat(t) ? t.subtasks || [] : [t]));
+}
+function taskById(id, ts = tasks) {
+  for (const t of ts) {
+    if (t.id === id) return t;
+    const r = taskById(id, t.subtasks || []);
+    if (r) return r;
+  }
+  return null;
+}
+
+// stable: keeps the user's manual order within each priority group; category
+// shelves carry no priority and sit above the groups as their own band
+const rank = (t) => (isCat(t) ? -1 : PRIO_RANK[t.priority]);
 function sortTasks() {
-  tasks.sort((a, b) => PRIO_RANK[a.priority] - PRIO_RANK[b.priority]);
+  tasks.sort((a, b) => rank(a) - rank(b));
 }
 const $ = (s) => document.querySelector(s);
 const list = $('#list');
@@ -223,12 +260,15 @@ async function load() {
     tasks = Array.isArray(data.tasks) ? data.tasks : [];
     sortTasks();
     // number every task that doesn't have one yet (migration + safety net);
-    // the counter never goes backwards, so numbers are never reused
+    // the counter never goes backwards, so numbers are never reused. gnum = a
+    // global number waiting out a subtask stint (see the drag commit) — it must
+    // keep its claim on the counter too.
     nextNum = Math.max(
       Number.isFinite(data.nextNum) ? data.nextNum : 1,
-      ...tasks.map((t) => (t.num || 0) + 1)
+      ...numberedRoots().map((t) => (t.num || 0) + 1),
+      ...allTasks(tasks).map((t) => (t.gnum || 0) + 1)
     );
-    const unnumbered = tasks.filter((t) => !t.num);
+    const unnumbered = numberedRoots().filter((t) => !t.num);
     for (const t of unnumbered) t.num = nextNum++;
     // same safety net for subtasks, recursively: per-parent counter, numbers never reused
     let subFixed = 0;
@@ -243,14 +283,21 @@ async function load() {
         fixSubNums(s);
       }
     };
-    for (const t of tasks) fixSubNums(t);
+    for (const t of numberedRoots()) fixSubNums(t);
+    // categories are organizational only — scrub any status/priority/num a
+    // shelf ever picked up (pre-2026-08-27 shelves were created with a priority)
+    let catScrubbed = 0;
+    for (const t of tasks) {
+      if (!isCat(t)) continue;
+      for (const k of ['priority', 'status', 'num']) if (k in t) { delete t[k]; catScrubbed++; }
+    }
     // drop collapsed-state ids that no longer exist
     let prunedCollapsed = false;
     const liveIds = new Set(allTasks(tasks).map((x) => x.id));
     for (const id of collapsed) if (!liveIds.has(id)) { collapsed.delete(id); prunedCollapsed = true; }
     if (prunedCollapsed) saveCollapsed();
     render();
-    if (unnumbered.length || subFixed) save();
+    if (unnumbered.length || subFixed || catScrubbed) save();
     else setSave('Loaded', 'ok');
   } catch (e) {
     setSave('Load failed: ' + e.message, 'err');
@@ -267,7 +314,7 @@ function allTasks(ts) {
 
 function counts() {
   const c = { todo: 0, doing: 0, done: 0 };
-  for (const t of allTasks(tasks)) c[t.status] = (c[t.status] || 0) + 1;
+  for (const t of allTasks(tasks)) { if (isCat(t)) continue; c[t.status] = (c[t.status] || 0) + 1; }
   $('#counts').textContent = `${c.todo} todo · ${c.doing} doing · ${c.done} done`;
 }
 
@@ -289,8 +336,9 @@ function filterState() {
   const showSubtree = (t) => { show.add(t.id); for (const s of t.subtasks || []) showSubtree(s); };
   const walk = (ts, label0, chain) => {
     for (const t of ts) {
-      const label = label0 ? `${label0}-${t.num}` : '#' + t.num;
-      const isHit = (byNum && (label === '#' + numPath || label.startsWith('#' + numPath + '-')))
+      // categories carry no number — tasks under one restart at their global '#N'
+      const label = isCat(t) ? '' : label0 ? `${label0}-${t.num}` : '#' + t.num;
+      const isHit = (byNum && !!label && (label === '#' + numPath || label.startsWith('#' + numPath + '-')))
         || (t.title || '').toLowerCase().includes(q);
       if (isHit) {
         hit.add(t.id);
@@ -304,14 +352,24 @@ function filterState() {
   return { q, hit, show };
 }
 
-function addSubtask(parent) {
+// draw the next per-parent subtask number — stable and never reused, like
+// top-level nums (the counter only climbs, even after subtasks leave)
+function drawSubNum(parent) {
   parent.subtasks = parent.subtasks || [];
-  // per-parent counter — sub numbers are stable and never reused, like top-level nums
   parent.nextSub = Math.max(
     Number.isFinite(parent.nextSub) ? parent.nextSub : 1,
-    ...parent.subtasks.map((s) => (s.num || 0) + 1)
+    ...parent.subtasks.map((x) => (x.num || 0) + 1)
   );
-  const s = { id: newId(), num: parent.nextSub++, title: '', status: 'todo', priority: parent.priority, notes: '' };
+  return parent.nextSub++;
+}
+
+function addSubtask(parent) {
+  parent.subtasks = parent.subtasks || [];
+  // under a category: a real task drawing a global number (shelves have no
+  // priority to inherit); under a task: a per-parent subtask number
+  const s = isCat(parent)
+    ? { id: newId(), num: nextNum++, title: '', status: 'todo', priority: 'medium', notes: '' }
+    : { id: newId(), num: drawSubNum(parent), title: '', status: 'todo', priority: parent.priority, notes: '' };
   parent.subtasks.push(s);
   if (collapsed.delete(parent.id)) saveCollapsed(); // reveal what we just added
   render();
@@ -319,12 +377,32 @@ function addSubtask(parent) {
   list.querySelector(`li[data-id="${s.id}"] .title`)?.focus();
 }
 
+// --- reorder commit: POSITIONAL, never a wholesale rebuild from the DOM.
+// Filters (search, hide-done) mean not every task has a rendered row — a
+// rebuild from rows would silently drop the hidden ones. Instead the moved
+// task alone is re-inserted next to its nearest RENDERED neighbour in arr.
+function positionalInsert(arr, t, li, rowFilter) {
+  const rows = [...list.querySelectorAll('li.task')].filter((el) => el === li || rowFilter(el));
+  const i = rows.indexOf(li);
+  const inArr = (id) => arr.findIndex((x) => x.id === id);
+  for (let k = i + 1; k < rows.length; k++) { // next rendered sibling → insert before it
+    const j = inArr(rows[k].dataset.id);
+    if (j !== -1) { arr.splice(j, 0, t); return; }
+  }
+  for (let k = i - 1; k >= 0; k--) { // else previous one → insert after it
+    const j = inArr(rows[k].dataset.id);
+    if (j !== -1) { arr.splice(j + 1, 0, t); return; }
+  }
+  arr.push(t); // no rendered siblings at all
+}
+
 // one row for a task at any depth — subtasks render indented under their
 // parent, keep manual order, and their priority pill is a label only
 // (top-level priority grouping ignores it). label is the full "#1-2-1" path.
 function buildRow(t, parent, label, depth, f) {
+  const cat = isCat(t);
   const li = document.createElement('li');
-  li.className = `task st-${t.status}` + (parent ? ' subtask' : '') + (openNotes.has(t.id) ? ' notes-open' : '')
+  li.className = 'task' + (cat ? ' category' : ` st-${t.status}`) + (parent ? ' subtask' : '') + (openNotes.has(t.id) ? ' notes-open' : '')
     + (f && !f.hit.has(t.id) ? ' ctx' : '');
   li.dataset.id = t.id;
   li.dataset.parent = parent ? parent.id : '';
@@ -335,6 +413,21 @@ function buildRow(t, parent, label, depth, f) {
   num.className = 'num';
   num.textContent = label;
   num.title = 'Task number — stable reference';
+
+  // category-only chrome: a folder glyph where the status pill would sit, and a
+  // live "N open · N done" tally of the tasks filed under it
+  const catIcon = document.createElement('span');
+  catIcon.className = 'cat-icon';
+  catIcon.textContent = '📁';
+  catIcon.title = 'Category — organizes tasks, has no number or status';
+  const catCounts = document.createElement('span');
+  catCounts.className = 'cat-counts';
+  if (cat) {
+    const flat = allTasks(t.subtasks || []).filter((x) => !isCat(x));
+    const open = flat.filter((x) => x.status !== 'done').length;
+    const done = flat.length - open;
+    catCounts.textContent = flat.length ? `${open} open${done ? ` · ${done} done` : ''}` : 'empty';
+  }
 
   const kids = (t.subtasks || []).length;
   const tog = document.createElement('button');
@@ -382,30 +475,35 @@ function buildRow(t, parent, label, depth, f) {
   const title = document.createElement('input');
   title.className = 'title';
   title.value = t.title;
+  if (cat) title.placeholder = 'Category…';
   title.oninput = () => { t.title = title.value; save(); };
   title.onkeydown = (e) => { if (e.key === 'Enter') title.blur(); };
 
-  const prio = document.createElement('select');
-  prio.className = `pill prio p-${t.priority}`;
-  prio.title = 'Priority';
-  for (const p of PRIO) {
-    const o = document.createElement('option');
-    o.value = p;
-    o.textContent = p;
-    o.selected = p === t.priority;
-    prio.appendChild(o);
+  // categories carry no priority — no pill at all on shelf rows
+  let prio = null;
+  if (!cat) {
+    prio = document.createElement('select');
+    prio.className = `pill prio p-${t.priority}`;
+    prio.title = 'Priority';
+    for (const p of PRIO) {
+      const o = document.createElement('option');
+      o.value = p;
+      o.textContent = p;
+      o.selected = p === t.priority;
+      prio.appendChild(o);
+    }
+    prio.onchange = () => {
+      t.priority = prio.value;
+      if (!parent) sortTasks();
+      render();
+      save();
+    };
   }
-  prio.onchange = () => {
-    t.priority = prio.value;
-    if (!parent) sortTasks();
-    render();
-    save();
-  };
 
   const subBtn = document.createElement('button');
   subBtn.className = 'icon sub';
   subBtn.textContent = '⤷';
-  subBtn.title = 'Add subtask';
+  subBtn.title = cat ? 'Add task in this category (gets its own global number)' : 'Add subtask';
   subBtn.onclick = () => addSubtask(t);
 
   const notesBtn = document.createElement('button');
@@ -421,9 +519,15 @@ function buildRow(t, parent, label, depth, f) {
   const del = document.createElement('button');
   del.className = 'icon del';
   del.textContent = '✕';
-  del.title = parent ? 'Delete subtask' : 'Delete task';
+  del.title = cat
+    ? ((t.subtasks || []).length ? 'Delete category — its tasks move back to top level' : 'Delete category')
+    : parent ? 'Delete subtask' : 'Delete task';
   del.onclick = () => {
-    if (parent) parent.subtasks = parent.subtasks.filter((x) => x.id !== t.id);
+    if (cat) {
+      // dissolve: the category dies, its tasks keep living (numbers intact)
+      tasks.splice(tasks.indexOf(t), 1, ...(t.subtasks || []));
+      sortTasks();
+    } else if (parent) parent.subtasks = parent.subtasks.filter((x) => x.id !== t.id);
     else tasks = tasks.filter((x) => x.id !== t.id);
     openNotes.delete(t.id);
     render();
@@ -436,13 +540,18 @@ function buildRow(t, parent, label, depth, f) {
   notes.value = t.notes || '';
   notes.oninput = () => { t.notes = notes.value; save(); };
 
-  li.append(tog, handle, num, status, title, prio, subBtn, notesBtn, del, notes);
+  li.append(tog, handle);
+  if (cat) li.append(catIcon, title, catCounts);
+  else li.append(num, status, title, prio);
+  li.append(subBtn, notesBtn, del, notes);
 
   // --- drag & drop reorder: move the DOM node live, commit order on dragend ---
   li.addEventListener('dragstart', (e) => {
     li.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', t.id);
+    dragFromX = e.clientX; // anchors the horizontal depth gesture (34 px / level)
+    dragFromDepth = depth;
     // a dragged task's whole subtree re-attaches on dragend's re-render; hide it mid-drag
     const hideDesc = (x) => {
       for (const s of x.subtasks || []) {
@@ -456,22 +565,44 @@ function buildRow(t, parent, label, depth, f) {
   li.addEventListener('dragend', () => {
     li.classList.remove('dragging');
     li.draggable = false;
-    if (parent) {
-      // subtasks: commit sibling order only — they never leave their parent
-      const ids = [...list.querySelectorAll(`li.task[data-parent="${parent.id}"]`)].map((el) => el.dataset.id);
-      parent.subtasks = ids.map((id) => parent.subtasks.find((x) => x.id === id));
+    li.style.marginLeft = '';
+    list.querySelector('.drop-into')?.classList.remove('drop-into');
+    const drop = li.dataset.dropParent; // '' = top level · a row id · undefined = no dragover fired
+    delete li.dataset.dropParent;
+    const destId = drop === undefined ? (parent ? parent.id : '') : drop;
+    const dest = destId ? taskById(destId) : null;
+    if (destId && (!dest || isCat(t))) { render(); return; } // target vanished / categories never nest
+    // detach from the source container
+    if (parent) parent.subtasks = (parent.subtasks || []).filter((x) => x.id !== t.id);
+    else tasks = tasks.filter((x) => x.id !== t.id);
+    // number bookkeeping — only when the numbering DOMAIN changes. Global
+    // numbers (top level + category members) wait in gnum while the task
+    // serves as a subtask and come back when it leaves; retired numbers are
+    // never reused, so the stash can't collide.
+    const srcGlobal = !parent || isCat(parent);
+    const destGlobal = !dest || isCat(dest);
+    if (srcGlobal && !destGlobal) { t.gnum = t.num; t.num = drawSubNum(dest); }
+    else if (!srcGlobal && destGlobal) { t.num = Number.isFinite(t.gnum) ? t.gnum : nextNum++; delete t.gnum; }
+    else if (!srcGlobal && !destGlobal && parent.id !== dest.id) t.num = drawSubNum(dest);
+    if (dest) {
+      dest.subtasks = dest.subtasks || [];
+      positionalInsert(dest.subtasks, t, li, (el) => el.dataset.parent === destId);
+      if (collapsed.delete(dest.id)) saveCollapsed(); // reveal where it landed
     } else {
-      // commit DOM order (top-level rows only), then let the drop position
-      // decide the priority: landing inside another group adopts that group's
-      // priority (otherwise the live sort would just snap the row back)
-      tasks = [...list.querySelectorAll('li.task[data-parent=""]')].map((el) => tasks.find((x) => x.id === el.dataset.id));
-      const i = tasks.indexOf(t);
-      const prev = tasks[i - 1];
-      const next = tasks[i + 1];
-      if (prev && next) {
-        if (t.priority !== prev.priority && t.priority !== next.priority) t.priority = prev.priority;
-      } else if (prev && t.priority !== prev.priority) t.priority = prev.priority;
-      else if (next && t.priority !== next.priority) t.priority = next.priority;
+      positionalInsert(tasks, t, li, (el) => el.dataset.parent === '');
+      // landing inside another group adopts that group's priority (otherwise
+      // the live sort would just snap the row back); categories carry no
+      // priority, so the neighbours that count are the nearest real tasks
+      if (!isCat(t)) {
+        const i = tasks.indexOf(t);
+        let prev = null, next = null;
+        for (let k = i - 1; k >= 0; k--) if (!isCat(tasks[k])) { prev = tasks[k]; break; }
+        for (let k = i + 1; k < tasks.length; k++) if (!isCat(tasks[k])) { next = tasks[k]; break; }
+        if (prev && next) {
+          if (t.priority !== prev.priority && t.priority !== next.priority) t.priority = prev.priority;
+        } else if (prev && t.priority !== prev.priority) t.priority = prev.priority;
+        else if (next && t.priority !== next.priority) t.priority = next.priority;
+      }
       sortTasks();
     }
     render();
@@ -485,7 +616,7 @@ function appendRows(t, parent, label, depth, f) {
   if (f && !f.show.has(t.id)) return; // filtered out (its whole subtree with it — a matching descendant would have marked it)
   list.appendChild(buildRow(t, parent, label, depth, f));
   if (collapsed.has(t.id) && !f) return; // children stay in the data, just not rendered (search forces them open)
-  for (const s of t.subtasks || []) appendRows(s, t, `${label}-${s.num}`, depth + 1, f);
+  for (const s of t.subtasks || []) appendRows(s, t, isCat(t) ? '#' + s.num : `${label}-${s.num}`, depth + 1, f);
 }
 
 function render() {
@@ -494,16 +625,27 @@ function render() {
   list.innerHTML = '';
   let lastPrio = null;
   let shown = 0;
+  // a priority header only renders once its group actually shows a row —
+  // with "hide done" on, a group whose tasks are all done (subtasks included)
+  // would otherwise leave a bare dangling label
+  let pendingHeader = null;
+  const hidingDone = list.classList.contains('hide-done') && !f;
+  const subtreeShows = (x) => x.status !== 'done' || (x.subtasks || []).some(subtreeShows);
   for (const t of tasks) {
     if (f && !f.show.has(t.id)) continue;
-    if (t.priority !== lastPrio) {
+    // category shelves render as their own band above the groups — no header
+    if (!isCat(t) && t.priority !== lastPrio) {
       lastPrio = t.priority;
-      const h = document.createElement('li');
-      h.className = 'group-header p-' + t.priority;
-      h.textContent = t.priority;
-      list.appendChild(h);
+      pendingHeader = t.priority;
     }
-    appendRows(t, null, '#' + t.num, 0, f);
+    if (pendingHeader && !isCat(t) && (!hidingDone || subtreeShows(t))) {
+      const h = document.createElement('li');
+      h.className = 'group-header p-' + pendingHeader;
+      h.textContent = pendingHeader;
+      list.appendChild(h);
+      pendingHeader = null;
+    }
+    appendRows(t, null, isCat(t) ? '' : '#' + t.num, 0, f);
     shown++;
   }
 
@@ -519,22 +661,70 @@ function render() {
 
 list.addEventListener('dragover', onDragOver);
 
+// horizontal drag anchors, set on dragstart: moving the cursor left/right by
+// 34 px per level picks the nesting depth in slots where more than one fits
+let dragFromX = 0;
+let dragFromDepth = 0;
+
 function onDragOver(e) {
   e.preventDefault();
   const dragged = list.querySelector('.dragging');
   if (!dragged) return;
-  // rows only reorder among their own siblings (same parent, any depth) and
-  // only land between blocks (a block = a row + its whole subtree)
-  const rows = [...list.querySelectorAll(`li.task[data-parent="${dragged.dataset.parent}"]`)]
-    .filter((el) => el !== dragged && el.offsetParent !== null);
-  if (!rows.length) return;
-  const after = rows.find((el) => e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2);
-  if (after) { list.insertBefore(dragged, after); return; }
-  // below the last sibling: land after that sibling's whole subtree
-  const last = rows[rows.length - 1];
-  let end = last.nextElementSibling;
-  while (end && end.classList.contains('task') && Number(end.dataset.depth) > Number(last.dataset.depth)) end = end.nextElementSibling;
-  list.insertBefore(dragged, end); // insertBefore(x, null) appends
+  const t = taskById(dragged.dataset.id);
+  if (!t) return;
+  const dragCat = isCat(t);
+  // slot candidates: every visible row (the dragged row's own subtree is
+  // hidden, so a task can never be dropped into itself). Categories never
+  // nest — a dragged category only lands between top-level blocks.
+  const candidates = [...list.querySelectorAll('li.task')].filter((el) => {
+    if (el === dragged || el.offsetParent === null) return false;
+    return dragCat ? el.dataset.parent === '' : true;
+  });
+  const after = candidates.find((el) => e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2) || null;
+  // the visible row physically above the drop slot decides what the slot can
+  // mean; walking up to it also notes any priority header the CURSOR crossed
+  // (a header only counts once the cursor is past its midline — the slot just
+  // above a header still belongs to the previous group's tail)
+  let prevRow = after ? after.previousElementSibling : list.lastElementChild;
+  let headerBetween = false;
+  while (prevRow && !(prevRow.classList.contains('task') && prevRow !== dragged && prevRow.offsetParent !== null)) {
+    if (prevRow.classList.contains('group-header')
+      && e.clientY > prevRow.getBoundingClientRect().top + prevRow.offsetHeight / 2) headerBetween = true;
+    prevRow = prevRow.previousElementSibling;
+  }
+  let parentId = '';
+  let depth = 0;
+  if (!dragCat && prevRow) {
+    const prevDepth = Number(prevRow.dataset.depth) || 0;
+    if (e.clientY < prevRow.getBoundingClientRect().bottom) {
+      // ON the row above the slot → nest as its (first) subtask; on a
+      // category row that means: file into the shelf, at the top
+      parentId = prevRow.dataset.id;
+      depth = prevDepth + 1;
+    } else {
+      // in the slot itself → the row keeps its indent until dragged
+      // left/right, clamped to what the slot allows (the next row's level up
+      // to one under the row above); crossing a priority header always lands
+      // at top level (headers only exist there)
+      const minDepth = after ? Number(after.dataset.depth) || 0 : 0;
+      let want = dragFromDepth + Math.round((e.clientX - dragFromX) / 34);
+      if (headerBetween) want = 0;
+      depth = Math.max(minDepth, Math.min(prevDepth + 1, want));
+      if (depth > 0) {
+        // the ancestor of the row above at depth-1 is the parent
+        let el = prevRow;
+        while (el && Number(el.dataset.depth) > depth - 1) el = list.querySelector(`li[data-id="${el.dataset.parent}"]`);
+        if (el) parentId = el.dataset.id;
+        else depth = 0;
+      }
+    }
+  }
+  dragged.dataset.dropParent = parentId;
+  dragged.style.marginLeft = depth ? depth * 34 + 'px' : ''; // live preview of the depth
+  const lit = list.querySelector('.drop-into');
+  if (lit && lit.dataset.id !== parentId) lit.classList.remove('drop-into');
+  if (parentId) list.querySelector(`li[data-id="${parentId}"]`)?.classList.add('drop-into');
+  list.insertBefore(dragged, after);
 }
 
 function addTask() {
@@ -549,7 +739,22 @@ function addTask() {
   input.focus();
 }
 
+// categories are organizational only — no number, no status, no priority;
+// tasks filed under one keep their own global #numbers
+function addCategory() {
+  const input = $('#newTitle');
+  const title = input.value.trim();
+  if (!title) return;
+  tasks.unshift({ id: newId(), kind: 'category', title, notes: '', subtasks: [] });
+  sortTasks();
+  input.value = '';
+  render();
+  save();
+  input.focus();
+}
+
 $('#addBtn').onclick = addTask;
+$('#addCatBtn').onclick = addCategory;
 $('#newTitle').onkeydown = (e) => { if (e.key === 'Enter') addTask(); };
 
 // search box: live filter; Esc clears; "/" anywhere outside a field focuses it
@@ -573,6 +778,7 @@ list.classList.toggle('hide-done', hideDoneBox.checked);
 hideDoneBox.onchange = (e) => {
   list.classList.toggle('hide-done', e.target.checked);
   localStorage.setItem('tasks-hide-done', e.target.checked ? '1' : '0');
+  render(); // headers of all-done groups come and go with the checkbox
 };
 
 load();
