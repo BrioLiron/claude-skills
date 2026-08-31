@@ -16,59 +16,59 @@
   }
   body {
     background: var(--bg); color: var(--text);
-    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-    max-width: 860px; margin: 0 auto; padding: 24px 16px 80px;
+    font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 860px; margin: 0 auto; padding: 16px 14px 48px;
   }
-  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
-  h1 { font-size: 22px; font-weight: 700; letter-spacing: .5px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  h1 { font-size: 18px; font-weight: 700; letter-spacing: .4px; }
   h1 span { color: var(--muted); font-weight: 400; }
-  .meta { display: flex; align-items: center; gap: 14px; margin-left: auto; color: var(--muted); font-size: 12.5px; }
+  .meta { display: flex; align-items: center; gap: 12px; margin-left: auto; color: var(--muted); font-size: 11.5px; }
   .meta label { display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
-  #saveState { min-width: 70px; text-align: right; }
+  #saveState { min-width: 62px; text-align: right; }
   #saveState.ok { color: var(--done); }
   #saveState.busy { color: var(--doing); }
   #saveState.err { color: var(--high); }
 
-  .addbar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .addbar { display: flex; gap: 6px; margin-bottom: 8px; }
   .addbar input {
-    flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-    color: var(--text); padding: 9px 12px; font: inherit; outline: none;
+    flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 6px 9px; font: inherit; outline: none;
   }
   .addbar input:focus { border-color: var(--accent); }
   .addbar select, .addbar button {
-    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-    color: var(--text); padding: 9px 12px; font: inherit; cursor: pointer;
+    background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 6px 9px; font: inherit; cursor: pointer;
   }
   .addbar button:hover { border-color: var(--accent); color: var(--accent); }
 
   /* search: filters the list live by title text or #number path (see filterState) */
-  .searchbar { display: flex; align-items: center; gap: 8px; margin: -6px 0 14px; }
+  .searchbar { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px; }
   .searchbar input {
-    flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-    color: var(--text); padding: 8px 12px; font: inherit; outline: none;
+    flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 5px 9px; font: inherit; outline: none;
   }
   .searchbar input:focus { border-color: var(--accent); }
-  .searchbar .hits { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .searchbar .hits { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
   .searchbar .hits.none { color: var(--high); }
   .searchbar button {
-    background: transparent; border: 1px solid var(--border); border-radius: 8px;
-    color: var(--muted); padding: 7px 10px; font: inherit; cursor: pointer;
+    background: transparent; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--muted); padding: 5px 8px; font: inherit; cursor: pointer;
   }
   .searchbar button:hover { border-color: var(--accent); color: var(--accent); }
 
   ul { list-style: none; }
   li.group-header {
-    font: 700 10.5px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px;
-    color: var(--muted); padding: 12px 4px 6px; user-select: none;
+    font: 700 9.5px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); padding: 9px 3px 3px; user-select: none;
   }
   li.group-header.p-high   { color: var(--high); }
   li.group-header.p-medium { color: var(--medium); }
   li.group-header.p-low    { color: var(--low); }
   li.task {
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    margin-bottom: 8px; padding: 8px 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 7px;
+    margin-bottom: 2px; padding: 3px 8px;
     position: relative;
-    display: grid; grid-template-columns: auto auto auto 1fr auto auto auto auto; gap: 8px; align-items: center;
+    display: grid; grid-template-columns: auto auto auto 1fr auto auto auto auto; gap: 5px; align-items: center;
     transition: background .12s;
   }
   li.task:hover { background: var(--card-hover); }
@@ -83,20 +83,20 @@
   li.task.drop-into { border-color: var(--accent); }
 
   .handle {
-    cursor: grab; color: var(--muted); padding: 4px 6px; border-radius: 6px;
-    font-size: 15px; user-select: none; touch-action: none;
+    cursor: grab; color: var(--muted); padding: 2px 4px; border-radius: 5px;
+    font-size: 13px; user-select: none; touch-action: none;
   }
   .handle:hover { color: var(--text); background: var(--border); }
   .handle:active { cursor: grabbing; }
 
   .num {
-    position: absolute; top: -8px; left: 12px; z-index: 1;
+    position: absolute; top: -5px; left: 9px; z-index: 1;
     background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
-    color: var(--muted); font: 600 10px/1 ui-monospace, Consolas, monospace;
-    padding: 2px 7px; user-select: none; pointer-events: none;
+    color: var(--muted); font: 600 9px/1 ui-monospace, Consolas, monospace;
+    padding: 1px 5px; user-select: none; pointer-events: none;
   }
-  li.task { margin-top: 10px; } /* room for the tag overlapping the top border */
-  li.task.subtask { margin-top: 6px; } /* indent is inline: depth × 34px */
+  li.task { margin-top: 6px; } /* room for the tag overlapping the top border */
+  li.task.subtask { margin-top: 5px; } /* indent is inline: depth × INDENT (18px) */
 
   /* category rows — organizational shelves: no number, no status, no priority;
      they sit as their own band above the priority groups, and the tasks filed
@@ -104,17 +104,17 @@
   li.task.category {
     background: var(--cat); border-color: var(--cat-border);
     grid-template-columns: auto auto auto 1fr auto auto auto auto;
-    padding: 2px 10px; margin-top: 4px; /* thinner than task rows — shelves are chrome, not content */
+    padding: 1px 8px; margin-top: 3px; /* thinner than task rows — shelves are chrome, not content */
   }
-  li.task.category .title { font-weight: 700; font-size: 14px; padding: 3px 8px; }
-  li.task.category .icon, li.task.category .handle { padding: 2px 5px; }
-  .cat-icon { color: var(--accent); font-size: 13px; padding: 4px 2px; user-select: none; }
-  .cat-counts { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+  li.task.category .title { font-weight: 700; font-size: 12.5px; padding: 2px 6px; }
+  li.task.category .icon, li.task.category .handle { padding: 1px 4px; }
+  .cat-icon { color: var(--accent); font-size: 12px; padding: 2px 2px; user-select: none; }
+  .cat-counts { color: var(--muted); font-size: 10.5px; white-space: nowrap; }
 
   .pill {
     border: 1px solid var(--border); border-radius: 999px; background: transparent;
-    font: 600 11px/1 system-ui, sans-serif; padding: 5px 9px; cursor: pointer;
-    text-transform: uppercase; letter-spacing: .4px; user-select: none;
+    font: 600 9.5px/1 system-ui, sans-serif; padding: 3px 6px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: .3px; user-select: none;
   }
   .status.st-todo  { color: var(--todo);  border-color: var(--todo); }
   .status.st-doing { color: var(--doing); border-color: var(--doing); }
@@ -126,8 +126,8 @@
   select.pill option { background: var(--card); color: var(--text); font-size: 12px; }
 
   .title {
-    background: transparent; border: 1px solid transparent; border-radius: 6px;
-    color: var(--text); font: inherit; padding: 6px 8px; width: 100%; outline: none;
+    background: transparent; border: 1px solid transparent; border-radius: 5px;
+    color: var(--text); font: inherit; padding: 3px 6px; width: 100%; outline: none;
   }
   .title:hover { border-color: var(--border); }
   .title:focus { border-color: var(--accent); background: var(--bg); }
@@ -135,25 +135,26 @@
 
   .icon {
     background: transparent; border: none; color: var(--muted); cursor: pointer;
-    font-size: 14px; padding: 5px 7px; border-radius: 6px;
+    font-size: 12.5px; padding: 3px 5px; border-radius: 5px;
   }
   .icon:hover { color: var(--text); background: var(--border); }
   .icon.del:hover { color: var(--high); }
   .icon.sub:hover { color: var(--accent); }
-  .icon.tog { padding: 5px 4px; font-size: 11px; }
+  .icon.tog { padding: 3px 2px; font-size: 10px; }
   .icon.notes-btn.has-notes { color: var(--accent); }
 
   .notes {
     grid-column: 1 / -1; display: none;
-    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-    color: var(--muted); font: 12.5px/1.5 ui-monospace, Consolas, monospace;
-    padding: 8px 10px; width: 100%; resize: vertical; min-height: 54px; outline: none;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--muted); font: 11.5px/1.45 ui-monospace, Consolas, monospace;
+    padding: 6px 8px; width: 100%; resize: vertical; min-height: 42px; outline: none;
+    margin-bottom: 2px;
   }
   .notes:focus { border-color: var(--accent); color: var(--text); }
   li.task.notes-open .notes { display: block; }
 
-  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
-  footer { color: var(--muted); font-size: 11.5px; margin-top: 24px; text-align: center; }
+  .empty { color: var(--muted); text-align: center; padding: 26px 0; }
+  footer { color: var(--muted); font-size: 10.5px; margin-top: 16px; text-align: center; }
   footer code { color: var(--text); background: var(--card); padding: 1px 5px; border-radius: 4px; }
 </style>
 </head>
@@ -193,6 +194,10 @@
 const STATUS = ['todo', 'doing', 'done'];
 const PRIO = ['high', 'medium', 'low'];
 const PRIO_RANK = { high: 0, medium: 1, low: 2 };
+// nesting step in px — one source of truth for the inline indent AND the
+// horizontal drag gesture that picks depth. ~16px is the density sweet spot;
+// 34 pushed deep subtrees off the right edge.
+const INDENT = 18;
 
 // categories (kind: 'category') are organizational shelves: no number, no
 // status, top-level only. The tasks filed under one are REAL tasks — they keep
@@ -407,7 +412,7 @@ function buildRow(t, parent, label, depth, f) {
   li.dataset.id = t.id;
   li.dataset.parent = parent ? parent.id : '';
   li.dataset.depth = depth;
-  if (depth) li.style.marginLeft = depth * 34 + 'px';
+  if (depth) li.style.marginLeft = depth * INDENT + 'px';
 
   const num = document.createElement('span');
   num.className = 'num';
@@ -550,7 +555,7 @@ function buildRow(t, parent, label, depth, f) {
     li.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', t.id);
-    dragFromX = e.clientX; // anchors the horizontal depth gesture (34 px / level)
+    dragFromX = e.clientX; // anchors the horizontal depth gesture (INDENT px / level)
     dragFromDepth = depth;
     // a dragged task's whole subtree re-attaches on dragend's re-render; hide it mid-drag
     const hideDesc = (x) => {
@@ -662,7 +667,7 @@ function render() {
 list.addEventListener('dragover', onDragOver);
 
 // horizontal drag anchors, set on dragstart: moving the cursor left/right by
-// 34 px per level picks the nesting depth in slots where more than one fits
+// INDENT px per level picks the nesting depth in slots where more than one fits
 let dragFromX = 0;
 let dragFromDepth = 0;
 
@@ -707,7 +712,7 @@ function onDragOver(e) {
       // to one under the row above); crossing a priority header always lands
       // at top level (headers only exist there)
       const minDepth = after ? Number(after.dataset.depth) || 0 : 0;
-      let want = dragFromDepth + Math.round((e.clientX - dragFromX) / 34);
+      let want = dragFromDepth + Math.round((e.clientX - dragFromX) / INDENT);
       if (headerBetween) want = 0;
       depth = Math.max(minDepth, Math.min(prevDepth + 1, want));
       if (depth > 0) {
@@ -720,7 +725,7 @@ function onDragOver(e) {
     }
   }
   dragged.dataset.dropParent = parentId;
-  dragged.style.marginLeft = depth ? depth * 34 + 'px' : ''; // live preview of the depth
+  dragged.style.marginLeft = depth ? depth * INDENT + 'px' : ''; // live preview of the depth
   const lit = list.querySelector('.drop-into');
   if (lit && lit.dataset.id !== parentId) lit.classList.remove('drop-into');
   if (parentId) list.querySelector(`li[data-id="${parentId}"]`)?.classList.add('drop-into');
