@@ -11,7 +11,7 @@
     --bg: #0f1115; --card: #171a21; --card-hover: #1b1f28; --border: #262b36;
     --text: #dfe3ea; --muted: #8b93a3; --accent: #6bb2ff;
     --high: #ff6b6b; --medium: #f6b73c; --low: #6bb2ff;
-    --todo: #8b93a3; --doing: #f6b73c; --done: #4cc38a;
+    --todo: #8b93a3; --doing: #f6b73c; --cdone: #5aa9e6; --done: #4cc38a;
     --cat: #191f2b; --cat-border: #31405e;
   }
   body {
@@ -68,7 +68,7 @@
     background: var(--card); border: 1px solid var(--border); border-radius: 7px;
     margin-bottom: 2px; padding: 3px 8px;
     position: relative;
-    display: grid; grid-template-columns: auto auto auto 1fr auto auto auto auto; gap: 5px; align-items: center;
+    display: grid; grid-template-columns: auto auto auto 1fr auto auto auto auto auto; gap: 5px; align-items: center;
     transition: background .12s;
   }
   li.task:hover { background: var(--card-hover); }
@@ -103,7 +103,7 @@
      under one keep their own global #numbers */
   li.task.category {
     background: var(--cat); border-color: var(--cat-border);
-    grid-template-columns: auto auto auto 1fr auto auto auto auto;
+    grid-template-columns: auto auto auto 1fr auto auto auto auto auto;
     padding: 1px 8px; margin-top: 3px; /* thinner than task rows — shelves are chrome, not content */
   }
   li.task.category .title { font-weight: 700; font-size: 12.5px; padding: 2px 6px; }
@@ -118,6 +118,7 @@
   }
   .status.st-todo  { color: var(--todo);  border-color: var(--todo); }
   .status.st-doing { color: var(--doing); border-color: var(--doing); }
+  .status.st-cdone { color: var(--cdone); border-color: var(--cdone); }
   .status.st-done  { color: var(--done);  border-color: var(--done); }
   .prio.p-high   { color: var(--high);   border-color: var(--high); }
   .prio.p-medium { color: var(--medium); border-color: var(--medium); }
@@ -142,6 +143,14 @@
   .icon.sub:hover { color: var(--accent); }
   .icon.tog { padding: 3px 2px; font-size: 10px; }
   .icon.notes-btn.has-notes { color: var(--accent); }
+  /* ELI5 flag. Amber and bolder when raised, so an unanswered "explain this"
+     is findable by eye down a long list; muted like every other icon when not. */
+  /* the tag glyph is gold whatever `color` says, so an unraised flag is
+     greyed out instead — otherwise every row looks like it is asking */
+  .icon.eli5 { letter-spacing: -1px; filter: grayscale(1); opacity: .5; }
+  .icon.eli5:hover { color: var(--medium); filter: none; opacity: 1; }
+  .icon.eli5.asked { color: var(--medium); background: rgba(246, 183, 60, .13); filter: none; opacity: 1; }
+  li.task.eli5-asked { border-left: 2px solid var(--medium); }
 
   .notes {
     grid-column: 1 / -1; display: none;
@@ -188,10 +197,20 @@
 <ul id="list"></ul>
 <div id="empty" class="empty" hidden>No tasks — add one above.</div>
 
-<footer>Sorted by priority · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically</footer>
+<footer>Sorted by priority · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
 
 <script>
-const STATUS = ['todo', 'doing', 'done'];
+// cdone = Claude believes it is finished and it is waiting to be TESTED. It is
+// deliberately not 'done': it still counts as open, "hide done" leaves it on
+// screen, and its title is not struck through — the whole point is that it is
+// the queue of things to check, not a way to clear the board.
+const STATUS = ['todo', 'doing', 'cdone', 'done'];
+const STATUS_HELP = {
+  todo: 'Not started',
+  doing: 'In progress',
+  cdone: 'Claude says done — needs testing',
+  done: 'Verified done',
+};
 const PRIO = ['high', 'medium', 'low'];
 const PRIO_RANK = { high: 0, medium: 1, low: 2 };
 // nesting step in px — one source of truth for the inline indent AND the
@@ -238,30 +257,79 @@ function setSave(msg, cls) {
   el.className = cls;
 }
 
+// The revision this tab's copy is based on. Sent with every save so the server
+// can tell whether the file moved underneath us and merge instead of clobber.
+let baseRev = null;
 let saveTimer = null;
+let saving = false;
 function save() {
   setSave('Saving…', 'busy');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
+    saveTimer = null;
+    saving = true;
     try {
       const r = await fetch('/__save-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updated: new Date().toISOString(), nextNum, tasks }),
+        body: JSON.stringify({ updated: new Date().toISOString(), nextNum, tasks, baseRev }),
       });
       const j = await r.json();
-      if (j.ok) setSave('Saved ✓', 'ok');
-      else setSave('Save failed: ' + (j.error || r.status), 'err');
+      if (j.ok) {
+        baseRev = j.rev || baseRev;
+        if (j.merged) {
+          // The file had moved on and the server merged. Our copy is now behind
+          // the file we just wrote — adopt the result, or the next save would
+          // lose the same edits over again.
+          if (Array.isArray(j.tasks)) tasks = j.tasks;
+          if (Number.isFinite(j.nextNum)) nextNum = j.nextNum;
+          sortTasks();
+          render();
+          const bits = [];
+          if (j.merged.fields) bits.push(j.merged.fields + ' field' + (j.merged.fields > 1 ? 's' : ''));
+          if (j.merged.grafted) bits.push(j.merged.grafted + ' new');
+          setSave('Merged ✓' + (bits.length ? ' (' + bits.join(', ') + ' from disk)' : ''), 'ok');
+        } else {
+          setSave('Saved ✓', 'ok');
+        }
+      } else if (j.stale) {
+        // Too old to merge against. Reloading is the honest move: it is better
+        // to redo one edit than to overwrite changes this tab cannot see.
+        setSave('File moved on — reloading', 'busy');
+        await load();
+      } else {
+        setSave('Save failed: ' + (j.error || r.status), 'err');
+      }
     } catch (e) {
       setSave('Save failed: ' + e.message, 'err');
+    } finally {
+      saving = false;
     }
   }, 350);
 }
 
-async function load() {
+// TASKS.json is edited from outside this tab too. Poll the rev and pull the
+// file in when it moves, so a tab left open shows what is actually on disk
+// rather than drifting away from it. Skipped while a save is in flight (the
+// merge covers that) and while a field has focus, since re-rendering mid-edit
+// would take the caret away.
+const POLL_MS = 2500;
+setInterval(async () => {
+  if (saveTimer || saving || document.hidden) return;
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+  try {
+    const r = await fetch('/__tasks-rev');
+    const { rev } = await r.json();
+    if (rev && baseRev && rev !== baseRev) await load({ external: true });
+  } catch {}
+}, POLL_MS);
+
+async function load({ external = false } = {}) {
   try {
     const r = await fetch('/__tasks');
     const data = await r.json();
+    baseRev = data.rev || null;
     tasks = Array.isArray(data.tasks) ? data.tasks : [];
     sortTasks();
     // number every task that doesn't have one yet (migration + safety net);
@@ -294,7 +362,7 @@ async function load() {
     let catScrubbed = 0;
     for (const t of tasks) {
       if (!isCat(t)) continue;
-      for (const k of ['priority', 'status', 'num']) if (k in t) { delete t[k]; catScrubbed++; }
+      for (const k of ['priority', 'status', 'num', 'eli5']) if (k in t) { delete t[k]; catScrubbed++; }
     }
     // drop collapsed-state ids that no longer exist
     let prunedCollapsed = false;
@@ -303,7 +371,7 @@ async function load() {
     if (prunedCollapsed) saveCollapsed();
     render();
     if (unnumbered.length || subFixed || catScrubbed) save();
-    else setSave('Loaded', 'ok');
+    else setSave(external ? 'Updated from disk' : 'Loaded', 'ok');
   } catch (e) {
     setSave('Load failed: ' + e.message, 'err');
   }
@@ -318,9 +386,12 @@ function allTasks(ts) {
 }
 
 function counts() {
-  const c = { todo: 0, doing: 0, done: 0 };
+  const c = { todo: 0, doing: 0, cdone: 0, done: 0 };
   for (const t of allTasks(tasks)) { if (isCat(t)) continue; c[t.status] = (c[t.status] || 0) + 1; }
-  $('#counts').textContent = `${c.todo} todo · ${c.doing} doing · ${c.done} done`;
+  const asked = allTasks(tasks).filter((t) => t.eli5 && !isCat(t)).length;
+  $('#counts').textContent =
+    `${c.todo} todo · ${c.doing} doing · ${c.cdone} to test · ${c.done} done` +
+    (asked ? ` · ${asked} to explain` : '');
 }
 
 // --- search: title text or #number path ------------------------------------
@@ -407,7 +478,7 @@ function positionalInsert(arr, t, li, rowFilter) {
 function buildRow(t, parent, label, depth, f) {
   const cat = isCat(t);
   const li = document.createElement('li');
-  li.className = 'task' + (cat ? ' category' : ` st-${t.status}`) + (parent ? ' subtask' : '') + (openNotes.has(t.id) ? ' notes-open' : '')
+  li.className = 'task' + (cat ? ' category' : ` st-${t.status}`) + (parent ? ' subtask' : '') + (t.eli5 ? ' eli5-asked' : '') + (openNotes.has(t.id) ? ' notes-open' : '')
     + (f && !f.hit.has(t.id) ? ' ctx' : '');
   li.dataset.id = t.id;
   li.dataset.parent = parent ? parent.id : '';
@@ -463,11 +534,12 @@ function buildRow(t, parent, label, depth, f) {
 
   const status = document.createElement('select');
   status.className = `pill status st-${t.status}`;
-  status.title = 'Status';
+  status.title = STATUS_HELP[t.status] || 'Status';
   for (const s of STATUS) {
     const o = document.createElement('option');
     o.value = s;
     o.textContent = s;
+    o.title = STATUS_HELP[s] || '';
     o.selected = s === t.status;
     status.appendChild(o);
   }
@@ -521,6 +593,30 @@ function buildRow(t, parent, label, depth, f) {
     if (openNotes.has(t.id)) list.querySelector(`li[data-id="${t.id}"] .notes`)?.focus();
   };
 
+  // ELI5 flag: "explain this to me in plain language". A REQUEST, not a note —
+  // Claude answers it in the task's notes and clears the flag, so a raised flag
+  // always means an explanation is still owed.
+  const eli5 = document.createElement('button');
+  eli5.className = 'icon eli5' + (t.eli5 ? ' asked' : '');
+  eli5.textContent = '🏷️?';
+  eli5.title = t.eli5
+    ? 'ELI5 requested — Claude owes a plain-language explanation. Click to withdraw.'
+    : 'Ask Claude to explain this in plain language';
+  if (cat) {
+    // a category is a shelf, not work — there is nothing to explain about one.
+    // Hidden rather than omitted, so the button columns still line up with the
+    // task rows (same trick as the collapse toggle on leaf rows).
+    eli5.style.visibility = 'hidden';
+    eli5.disabled = true;
+    eli5.title = '';
+  }
+  eli5.onclick = () => {
+    if (t.eli5) delete t.eli5; // absent rather than false, so the JSON stays clean
+    else t.eli5 = true;
+    render();
+    save();
+  };
+
   const del = document.createElement('button');
   del.className = 'icon del';
   del.textContent = '✕';
@@ -548,7 +644,7 @@ function buildRow(t, parent, label, depth, f) {
   li.append(tog, handle);
   if (cat) li.append(catIcon, title, catCounts);
   else li.append(num, status, title, prio);
-  li.append(subBtn, notesBtn, del, notes);
+  li.append(subBtn, eli5, notesBtn, del, notes);
 
   // --- drag & drop reorder: move the DOM node live, commit order on dragend ---
   li.addEventListener('dragstart', (e) => {
