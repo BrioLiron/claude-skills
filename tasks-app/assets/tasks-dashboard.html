@@ -545,6 +545,10 @@ function buildRow(t, parent, label, depth, f) {
   }
   status.onchange = () => {
     t.status = status.value;
+    // a parent marked done takes its whole subtree with it (owner rule
+    // 2026-09-08) — a finished parent can't have open children. Only the
+    // explicit done click cascades: flipping a parent back leaves them alone.
+    if (t.status === 'done') for (const c of allTasks(t.subtasks || [])) if (!isCat(c)) c.status = 'done';
     render();
     save();
   };
