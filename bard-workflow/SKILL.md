@@ -47,7 +47,7 @@ The working conventions established on **BARD** (Brio Awesome Realtime Display).
 
 - **CRLF churn:** file edits can flip LF→CRLF and bloat a diff to whole-file. Check `git diff --stat` before committing; `git diff --ignore-cr-at-eol` proves the churn is content-free before normalizing.
 - **PowerShell 5.1:** no `&&`/`||`; multi-line commit messages go through single-quoted here-strings (`git commit -m @'…'@`) — and double quotes inside them can split into bogus pathspecs. Never pipe `git diff` output through PowerShell; use `--output=<file>`.
-- **Ports:** the owner's live dev server runs on **:5180** (reuse it for read-only diagnostics); the verify suite expects **:5174** (spawn it only for tests, and say why); **:5173 is forbidden** — it belongs to the owner's other project (V.I.B.E.S). PowerShell `npm run dev` drops `--port` flags; use `npx vite --port 5174 --strictPort`.
+- **Ports + where to work (owner rule 2026-09-08): ALWAYS work directly in the MAIN checkout, served by the owner's `run.bat` on :5180.** Do not open extra dev-server ports and do not build features in worktrees — their :5180 tabs hot-reloading on src edits is accepted; git revert is the safety net. (Still warn before anything that could destructively ADOPT over their unsaved in-browser scene — localStorage is not revertable.) The verify suite still spawns its own **:5174** (hardcoded in the tests — that's the harness, not a dev port); **:5173 is forbidden** — it belongs to the owner's other project (V.I.B.E.S). PowerShell `npm run dev` drops `--port` flags; use `npx vite --port 5174 --strictPort`.
 - Don't `TaskStop` a piped npm build — it orphans electron-builder (EBUSY next build); capture exit codes without a pipe.
 
 ## Session hygiene
