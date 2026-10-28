@@ -29,6 +29,22 @@
   #saveState.busy { color: var(--doing); }
   #saveState.err { color: var(--high); }
 
+  /* the "can't mark done" refusal — a small bubble next to the status pill it refused */
+  .block-tip {
+    position: fixed; z-index: 50; pointer-events: none;
+    background: var(--card); border: 1px solid var(--high); color: var(--high);
+    font-size: 12px; padding: 5px 9px; border-radius: 6px; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+    animation: tipIn .12s ease-out;
+  }
+  .block-tip::before {
+    content: ''; position: absolute; left: -5px; top: 50%; margin-top: -4px;
+    width: 8px; height: 8px; background: var(--card);
+    border-left: 1px solid var(--high); border-bottom: 1px solid var(--high);
+    transform: rotate(45deg);
+  }
+  @keyframes tipIn { from { opacity: 0; transform: translateX(-4px); } }
+
   .addbar { display: flex; gap: 6px; margin-bottom: 8px; }
   .addbar input {
     flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 6px;
@@ -256,6 +272,31 @@ function setSave(msg, cls) {
   el.textContent = msg;
   el.className = cls;
 }
+
+// The refusal popup: a bubble right next to the element that refused the edit
+// (the status pill of a parent that can't go done). One at a time; it leaves
+// after a few seconds, on any click, or when the page scrolls.
+let blockTip = null;
+function showBlockTip(anchor, msg) {
+  hideBlockTip();
+  const tip = document.createElement('div');
+  tip.className = 'block-tip';
+  tip.textContent = msg;
+  document.body.appendChild(tip);
+  const r = anchor.getBoundingClientRect();
+  tip.style.left = `${Math.min(r.right + 8, innerWidth - tip.offsetWidth - 6)}px`;
+  tip.style.top = `${r.top + r.height / 2 - tip.offsetHeight / 2}px`;
+  tip.timer = setTimeout(hideBlockTip, 4000);
+  blockTip = tip;
+}
+function hideBlockTip() {
+  if (!blockTip) return;
+  clearTimeout(blockTip.timer);
+  blockTip.remove();
+  blockTip = null;
+}
+addEventListener('pointerdown', hideBlockTip, true);
+addEventListener('scroll', hideBlockTip, true);
 
 // The revision this tab's copy is based on. Sent with every save so the server
 // can tell whether the file moved underneath us and merge instead of clobber.
@@ -551,8 +592,7 @@ function buildRow(t, parent, label, depth, f) {
       const open = allTasks(t.subtasks || []).filter((c) => !isCat(c) && c.status !== 'done');
       if (open.length) {
         status.value = t.status; // put the dropdown back — nothing changed, nothing saved
-        setSave(`${open.length} open subtask${open.length > 1 ? 's' : ''} — finish them first`, 'err');
-        setTimeout(() => { if ($('#saveState').className === 'err') setSave('', ''); }, 4000);
+        showBlockTip(status, `${open.length} open subtask${open.length > 1 ? 's' : ''} — finish them first`);
         return;
       }
     }
