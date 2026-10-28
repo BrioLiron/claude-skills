@@ -197,7 +197,7 @@
 <ul id="list"></ul>
 <div id="empty" class="empty" hidden>No tasks — add one above.</div>
 
-<footer>Sorted by priority · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
+<footer>Sorted by priority · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · a parent can't be marked <b>done</b> while any of its subtasks is still open (cdone included) — finish the children first · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
 
 <script>
 // cdone = Claude believes it is finished and it is waiting to be TESTED. It is
@@ -544,11 +544,19 @@ function buildRow(t, parent, label, depth, f) {
     status.appendChild(o);
   }
   status.onchange = () => {
+    // a parent cannot be marked done while any subtask is still open (owner
+    // rule 2026-10-28, REPLACES the 2026-09-08 done-cascade): the subtree is
+    // the work, so the children must be done first. cdone counts as open.
+    if (status.value === 'done') {
+      const open = allTasks(t.subtasks || []).filter((c) => !isCat(c) && c.status !== 'done');
+      if (open.length) {
+        status.value = t.status; // put the dropdown back — nothing changed, nothing saved
+        setSave(`${open.length} open subtask${open.length > 1 ? 's' : ''} — finish them first`, 'err');
+        setTimeout(() => { if ($('#saveState').className === 'err') setSave('', ''); }, 4000);
+        return;
+      }
+    }
     t.status = status.value;
-    // a parent marked done takes its whole subtree with it (owner rule
-    // 2026-09-08) — a finished parent can't have open children. Only the
-    // explicit done click cascades: flipping a parent back leaves them alone.
-    if (t.status === 'done') for (const c of allTasks(t.subtasks || [])) if (!isCat(c)) c.status = 'done';
     render();
     save();
   };
