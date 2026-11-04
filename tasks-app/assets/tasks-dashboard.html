@@ -99,7 +99,7 @@
     background: var(--card); border: 1px solid var(--border); border-radius: 7px;
     margin-bottom: 2px; padding: 3px 8px;
     position: relative;
-    display: grid; grid-template-columns: auto auto auto 1fr auto auto auto auto auto auto auto; gap: 5px; align-items: center;
+    display: grid; grid-template-columns: auto auto auto 1fr auto auto auto auto auto; gap: 5px; align-items: center;
     transition: background .12s;
   }
   li.task:hover { background: var(--card-hover); }
@@ -183,34 +183,6 @@
   .icon.eli5.asked { color: var(--medium); background: rgba(246, 183, 60, .13); filter: none; opacity: 1; }
   li.task.eli5-asked { border-left: 2px solid var(--medium); }
 
-  /* due date: an 📅 icon until set, then a chip with the date. Red once the
-     date is behind us, amber on the day itself — findable by eye like eli5. */
-  .due-chip {
-    border: 1px solid var(--border); border-radius: 999px; background: transparent;
-    color: var(--accent); font: 600 9.5px/1 ui-monospace, Consolas, monospace;
-    padding: 3px 6px; cursor: pointer; white-space: nowrap; user-select: none;
-  }
-  .due-chip:hover { border-color: var(--accent); }
-  .due-chip.today { color: var(--medium); border-color: var(--medium); }
-  .due-chip.overdue { color: var(--high); border-color: var(--high); }
-  li.task.st-done .due-chip { color: var(--muted); border-color: var(--border); }
-  .due-input { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
-
-  /* inner counter: a free-purpose tally per task (− n +). Dimmed at zero so
-     unused counters don't add noise down the list. */
-  .counter { display: flex; align-items: center; gap: 1px; }
-  .counter button {
-    background: transparent; border: none; color: var(--muted); cursor: pointer;
-    font: 700 11px/1 ui-monospace, Consolas, monospace; padding: 3px 3px; border-radius: 4px;
-  }
-  .counter button:hover { color: var(--text); background: var(--border); }
-  .counter .cnt {
-    min-width: 14px; text-align: center;
-    font: 600 11px/1 ui-monospace, Consolas, monospace; color: var(--text);
-  }
-  .counter.zero .cnt { color: var(--muted); opacity: .5; }
-  .counter.zero button.dec { visibility: hidden; }
-
   .notes {
     grid-column: 1 / -1; display: none;
     background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
@@ -257,7 +229,7 @@
 <ul id="list"></ul>
 <div id="empty" class="empty" hidden>No tasks — add one above.</div>
 
-<footer>Sorted by priority · the <b>high / medium / low</b> chips in the header filter the board by priority — click one to hide/show that group (a struck-through chip is a hidden group; clicking the only lit chip brings all back; a search ignores the chips, and adding a task into a hidden group lights its chip back up) · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · 📅 sets an exact due date on a task (the chip turns amber on the day and red once overdue; clear it from the picker) · − n + is a free counter per task — count reps, occurrences, anything · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · a parent can't be marked <b>done</b> while any of its subtasks is still open (cdone included) — finish the children first · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
+<footer>Sorted by priority · the <b>high / medium / low</b> chips in the header filter the board by priority — click one to hide/show that group (a struck-through chip is a hidden group; clicking the only lit chip brings all back; a search ignores the chips, and adding a task into a hidden group lights its chip back up) · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · a parent can't be marked <b>done</b> while any of its subtasks is still open (cdone included) — finish the children first · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
 
 <script>
 // cdone = Claude believes it is finished and it is waiting to be TESTED. It is
@@ -715,77 +687,6 @@ function buildRow(t, parent, label, depth, f) {
     };
   }
 
-  // due date — an exact calendar date on the task. Stored as 'YYYY-MM-DD' in
-  // `due`, absent when unset (same cleanliness rule as eli5). The native date
-  // picker does the input; the chip shows it and colors by urgency.
-  let due = null, dueInput = null;
-  if (!cat) {
-    dueInput = document.createElement('input');
-    dueInput.type = 'date';
-    dueInput.className = 'due-input';
-    dueInput.tabIndex = -1;
-    due = document.createElement('button');
-    if (t.due) {
-      const today = new Date();
-      const todayStr = today.getFullYear() + '-'
-        + String(today.getMonth() + 1).padStart(2, '0') + '-'
-        + String(today.getDate()).padStart(2, '0');
-      const state = t.status === 'done' ? '' : t.due < todayStr ? ' overdue' : t.due === todayStr ? ' today' : '';
-      due.className = 'due-chip' + state;
-      const [, m, d] = t.due.split('-');
-      const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      due.textContent = `${Number(d)} ${MONTHS[Number(m) - 1]}`;
-      due.title = `Due ${t.due}` + (state === ' overdue' ? ' — overdue' : state === ' today' ? ' — today' : '') + ' · click to change, clear in the picker to remove';
-    } else {
-      due.className = 'icon due-btn';
-      due.textContent = '📅';
-      due.title = 'Set an exact due date';
-    }
-    due.onclick = () => {
-      dueInput.value = t.due || '';
-      if (dueInput.showPicker) dueInput.showPicker(); else dueInput.click();
-    };
-    dueInput.onchange = () => {
-      if (dueInput.value) t.due = dueInput.value;
-      else delete t.due;
-      render();
-      save();
-    };
-  }
-
-  // inner counter — a free tally on the task (reps, occurrences, whatever the
-  // owner is counting). Stored in `count`, absent at zero.
-  let counter = null;
-  if (!cat) {
-    counter = document.createElement('span');
-    counter.className = 'counter' + (t.count ? '' : ' zero');
-    counter.title = 'Counter';
-    const dec = document.createElement('button');
-    dec.className = 'dec';
-    dec.textContent = '−';
-    dec.title = 'Count down';
-    dec.onclick = () => {
-      if (t.count) {
-        t.count--;
-        if (!t.count) delete t.count;
-        render();
-        save();
-      }
-    };
-    const cnt = document.createElement('span');
-    cnt.className = 'cnt';
-    cnt.textContent = t.count || 0;
-    const inc = document.createElement('button');
-    inc.textContent = '+';
-    inc.title = 'Count up';
-    inc.onclick = () => {
-      t.count = (t.count || 0) + 1;
-      render();
-      save();
-    };
-    counter.append(dec, cnt, inc);
-  }
-
   const subBtn = document.createElement('button');
   subBtn.className = 'icon sub';
   subBtn.textContent = '⤷';
@@ -852,7 +753,7 @@ function buildRow(t, parent, label, depth, f) {
 
   li.append(tog, handle);
   if (cat) li.append(catIcon, title, catCounts);
-  else li.append(num, status, title, due, prio, counter, dueInput);
+  else li.append(num, status, title, prio);
   li.append(subBtn, eli5, notesBtn, del, notes);
 
   // --- drag & drop reorder: move the DOM node live, commit order on dragend ---
