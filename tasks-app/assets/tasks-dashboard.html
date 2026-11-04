@@ -24,6 +24,21 @@
   h1 span { color: var(--muted); font-weight: 400; }
   .meta { display: flex; align-items: center; gap: 12px; margin-left: auto; color: var(--muted); font-size: 11.5px; }
   .meta label { display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+
+  /* priority filter — one chip per group in the header; a dark chip is a
+     hidden group. Suspended while a search is active (search means "find it") */
+  .prio-filter { display: flex; gap: 4px; }
+  .prio-filter .chip {
+    border: 1px solid var(--border); border-radius: 999px; background: transparent;
+    font: 600 9.5px/1 system-ui, sans-serif; padding: 3px 7px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: .3px; user-select: none; color: var(--muted);
+    opacity: .4;
+  }
+  .prio-filter .chip.on { opacity: 1; }
+  .prio-filter .chip.on.p-high   { color: var(--high);   border-color: var(--high); }
+  .prio-filter .chip.on.p-medium { color: var(--medium); border-color: var(--medium); }
+  .prio-filter .chip.on.p-low    { color: var(--low);    border-color: var(--low); }
+  .prio-filter .chip:not(.on) { text-decoration: line-through; }
   #saveState { min-width: 62px; text-align: right; }
   #saveState.ok { color: var(--done); }
   #saveState.busy { color: var(--doing); }
@@ -188,6 +203,7 @@
   <h1>__PROJECT_NAME__ <span>Tasks</span></h1>
   <div class="meta">
     <span id="counts"></span>
+    <span class="prio-filter" id="prioFilter" title="Filter by priority — click a chip to hide/show that group; clicking the only lit chip brings all back"></span>
     <label><input type="checkbox" id="hideDone"> hide done</label>
     <span id="saveState"></span>
   </div>
@@ -213,7 +229,7 @@
 <ul id="list"></ul>
 <div id="empty" class="empty" hidden>No tasks — add one above.</div>
 
-<footer>Sorted by priority · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · a parent can't be marked <b>done</b> while any of its subtasks is still open (cdone included) — finish the children first · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
+<footer>Sorted by priority · the <b>high / medium / low</b> chips in the header filter the board by priority — click one to hide/show that group (a struck-through chip is a hidden group; clicking the only lit chip brings all back; a search ignores the chips, and adding a task into a hidden group lights its chip back up) · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · a parent can't be marked <b>done</b> while any of its subtasks is still open (cdone included) — finish the children first · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
 
 <script>
 // cdone = Claude believes it is finished and it is waiting to be TESTED. It is
@@ -444,6 +460,47 @@ function counts() {
 // and "hide done" are ignored while a search is active — a search means "find
 // it" — and restored untouched when the box is cleared.
 let query = '';
+// --- priority filter: which groups the board shows ---------------------------
+// All chips lit = no filtering (the default). Clicking the only lit chip brings
+// all three back. Suspended while a search is active, like "hide done" — a
+// search means "find it". The choice persists per browser, like hide-done.
+let prioOn = new Set(JSON.parse(localStorage.getItem('tasks-prio-filter') || 'null') || PRIO);
+const prioFiltering = () => prioOn.size < PRIO.length;
+function savePrioFilter() {
+  localStorage.setItem('tasks-prio-filter', JSON.stringify([...prioOn]));
+  renderPrioChips();
+  render();
+}
+function renderPrioChips() {
+  for (const el of document.querySelectorAll('#prioFilter .chip')) {
+    el.classList.toggle('on', prioOn.has(el.dataset.prio));
+  }
+}
+// adding a task whose group is filtered out would land it invisibly — light
+// that group's chip back up so you always see what you just added
+function revealPrio(p) {
+  if (prioOn.has(p)) return;
+  prioOn.add(p);
+  savePrioFilter();
+}
+{
+  const holder = $('#prioFilter');
+  for (const p of PRIO) {
+    const b = document.createElement('button');
+    b.className = `chip p-${p}`;
+    b.dataset.prio = p;
+    b.textContent = p;
+    b.onclick = () => {
+      if (prioOn.has(p) && prioOn.size === 1) prioOn = new Set(PRIO); // un-solo: back to all
+      else if (prioOn.has(p)) prioOn.delete(p);
+      else prioOn.add(p);
+      savePrioFilter();
+    };
+    holder.appendChild(b);
+  }
+  renderPrioChips();
+}
+
 function filterState() {
   const q = query.trim().toLowerCase();
   if (!q) return null;
@@ -487,6 +544,7 @@ function addSubtask(parent) {
   const s = isCat(parent)
     ? { id: newId(), num: nextNum++, title: '', status: 'todo', priority: 'medium', notes: '' }
     : { id: newId(), num: drawSubNum(parent), title: '', status: 'todo', priority: parent.priority, notes: '' };
+  revealPrio(s.priority); // the new row must be visible to type its title into
   parent.subtasks.push(s);
   if (collapsed.delete(parent.id)) saveCollapsed(); // reveal what we just added
   render();
@@ -767,6 +825,11 @@ function buildRow(t, parent, label, depth, f) {
 
 function appendRows(t, parent, label, depth, f) {
   if (f && !f.show.has(t.id)) return; // filtered out (its whole subtree with it — a matching descendant would have marked it)
+  // category members are real tasks with their own group priority — the
+  // priority filter applies to them too (deeper subtasks ride with their
+  // parent: their pill is a label only). Top-level tasks are filtered in
+  // render(), where the group headers are decided.
+  if (!f && prioFiltering() && parent && isCat(parent) && !prioOn.has(t.priority)) return;
   list.appendChild(buildRow(t, parent, label, depth, f));
   if (collapsed.has(t.id) && !f) return; // children stay in the data, just not rendered (search forces them open)
   for (const s of t.subtasks || []) appendRows(s, t, isCat(t) ? '#' + s.num : `${label}-${s.num}`, depth + 1, f);
@@ -783,9 +846,11 @@ function render() {
   // would otherwise leave a bare dangling label
   let pendingHeader = null;
   const hidingDone = list.classList.contains('hide-done') && !f;
+  const hidingPrio = prioFiltering() && !f;
   const subtreeShows = (x) => x.status !== 'done' || (x.subtasks || []).some(subtreeShows);
   for (const t of tasks) {
     if (f && !f.show.has(t.id)) continue;
+    if (hidingPrio && !isCat(t) && !prioOn.has(t.priority)) continue; // whole group filtered out — its header with it
     // category shelves render as their own band above the groups — no header
     if (!isCat(t) && t.priority !== lastPrio) {
       lastPrio = t.priority;
@@ -803,8 +868,10 @@ function render() {
   }
 
   const empty = $('#empty');
-  empty.textContent = f ? `No tasks match “${f.q}”.` : 'No tasks — add one above.';
-  empty.hidden = f ? shown > 0 : tasks.length > 0;
+  empty.textContent = f ? `No tasks match “${f.q}”.`
+    : hidingPrio ? 'Nothing at the shown priorities — click a chip above to bring a group back.'
+    : 'No tasks — add one above.';
+  empty.hidden = f || hidingPrio ? shown > 0 : tasks.length > 0;
   const hits = $('#hits');
   hits.textContent = f ? `${f.hit.size} match${f.hit.size === 1 ? '' : 'es'}` : '';
   hits.classList.toggle('none', !!f && f.hit.size === 0);
@@ -884,6 +951,7 @@ function addTask() {
   const input = $('#newTitle');
   const title = input.value.trim();
   if (!title) return;
+  revealPrio($('#newPrio').value); // a filtered-out group lights back up — never add into the invisible
   tasks.unshift({ id: newId(), num: nextNum++, title, status: 'todo', priority: $('#newPrio').value, notes: '' });
   sortTasks(); // stable → the new task lands at the top of its priority group
   input.value = '';
