@@ -59,6 +59,15 @@
     transform: rotate(45deg);
   }
   @keyframes tipIn { from { opacity: 0; transform: translateX(-4px); } }
+  /* the same bubble as a question: "N open subtasks. Mark all done?" + two buttons */
+  .block-tip.ask { pointer-events: auto; color: var(--text); border-color: var(--accent); display: flex; align-items: center; gap: 8px; }
+  .block-tip.ask::before { border-color: var(--accent); }
+  .block-tip.ask button {
+    background: var(--card); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--text); font: inherit; padding: 2px 8px; cursor: pointer;
+  }
+  .block-tip.ask button.yes { border-color: var(--done); color: var(--done); }
+  .block-tip.ask button:hover { border-color: var(--accent); }
 
   .addbar { display: flex; gap: 6px; margin-bottom: 8px; }
   .addbar input {
@@ -229,7 +238,7 @@
 <ul id="list"></ul>
 <div id="empty" class="empty" hidden>No tasks — add one above.</div>
 
-<footer>Sorted by priority · the <b>high / medium / low</b> chips in the header filter the board by priority — click one to hide/show that group (a struck-through chip is a hidden group; clicking the only lit chip brings all back; a search ignores the chips, and adding a task into a hidden group lights its chip back up) · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · a parent can't be marked <b>done</b> while any of its subtasks is still open (cdone included) — finish the children first · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
+<footer>Sorted by priority · the <b>high / medium / low</b> chips in the header filter the board by priority — click one to hide/show that group (a struck-through chip is a hidden group; clicking the only lit chip brings all back; a search ignores the chips, and adding a task into a hidden group lights its chip back up) · drag ⠿ to reorder (dropping into another group changes priority) · drop a row onto a task to nest it as that task's subtask — any row, any depth; in the slot between rows, drag left/right to pick the level (the row that would adopt it lights up) · numbers stay stable: filing under a category never renumbers, a task serving as a subtask takes a #parent-n number and its global # returns when it leaves · ＋ Category adds an organizing shelf — no number, no status, no priority, always above the groups; drop a task on a shelf (or between its tasks) to file it there, ✕ dissolves the shelf back to top level · 🏷? flags the task for an ELI5 — Claude owes a plain-language explanation in the notes and clears the flag when it lands, so a raised flag always means one is still outstanding · ⤷ adds a subtask (#1-2, #1-2-1…; on a shelf it adds a task with its own global number) · ▾ collapses/expands a subtree · status and priority are dropdowns — <b>cdone</b> means Claude believes it is finished and it is waiting to be tested, so it still counts as open and "hide done" leaves it visible · marking a parent <b>done</b> while any of its subtasks is still open (cdone included) asks first: <b>Mark all done</b> closes the parent and every subtask, Cancel leaves them as they were · search filters by title text or #number (a number shows that task with its subtasks; parents/subtasks of a match stay visible as context, done tasks included) · saves to <code>TASKS.json</code> automatically, and merges with edits made to the file directly — this tab and Claude can both work on it at once</footer>
 
 <script>
 // cdone = Claude believes it is finished and it is waiting to be TESTED. It is
@@ -311,7 +320,30 @@ function hideBlockTip() {
   blockTip.remove();
   blockTip = null;
 }
-addEventListener('pointerdown', hideBlockTip, true);
+// The same bubble as a question (owner 2026-11-11): marking a parent done while
+// subtasks are open asks "Mark all done?" instead of refusing. Yes runs onYes;
+// Cancel, Escape, a click elsewhere or a scroll leave everything as it was.
+function askBlockTip(anchor, msg, yesLabel, onYes) {
+  showBlockTip(anchor, msg);
+  const tip = blockTip;
+  clearTimeout(tip.timer); // a question waits for an answer
+  tip.classList.add('ask');
+  const yes = document.createElement('button');
+  yes.className = 'yes';
+  yes.textContent = yesLabel;
+  yes.onclick = () => { hideBlockTip(); onYes(); };
+  const no = document.createElement('button');
+  no.className = 'no';
+  no.textContent = 'Cancel';
+  no.onclick = hideBlockTip;
+  tip.append(yes, no);
+  // re-place: the buttons widened it
+  const r = anchor.getBoundingClientRect();
+  tip.style.left = `${Math.min(r.right + 8, innerWidth - tip.offsetWidth - 6)}px`;
+  tip.style.top = `${r.top + r.height / 2 - tip.offsetHeight / 2}px`;
+}
+addEventListener('pointerdown', (e) => { if (!(blockTip && blockTip.contains(e.target))) hideBlockTip(); }, true);
+addEventListener('keydown', (e) => { if (e.key === 'Escape') hideBlockTip(); }, true);
 addEventListener('scroll', hideBlockTip, true);
 
 // The revision this tab's copy is based on. Sent with every save so the server
@@ -643,14 +675,20 @@ function buildRow(t, parent, label, depth, f) {
     status.appendChild(o);
   }
   status.onchange = () => {
-    // a parent cannot be marked done while any subtask is still open (owner
-    // rule 2026-10-28, REPLACES the 2026-09-08 done-cascade): the subtree is
-    // the work, so the children must be done first. cdone counts as open.
+    // a parent with open subtasks never goes done on its own (owner rule
+    // 2026-10-28; cdone counts as open). Since 2026-11-11 the board ASKS
+    // instead of refusing: "Mark all done" closes the parent and its whole
+    // subtree in one step, Cancel leaves everything as it was.
     if (status.value === 'done') {
       const open = allTasks(t.subtasks || []).filter((c) => !isCat(c) && c.status !== 'done');
       if (open.length) {
-        status.value = t.status; // put the dropdown back — nothing changed, nothing saved
-        showBlockTip(status, `${open.length} open subtask${open.length > 1 ? 's' : ''} — finish them first`);
+        status.value = t.status; // put the dropdown back until the owner answers
+        askBlockTip(status, `${open.length} open subtask${open.length > 1 ? 's' : ''}. Mark all done?`, 'Mark all done', () => {
+          for (const c of open) c.status = 'done';
+          t.status = 'done';
+          render();
+          save();
+        });
         return;
       }
     }
